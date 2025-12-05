@@ -2,7 +2,8 @@ syntax = "proto3";
 
 package razpravljalnica;
 
-option go_package = "/razpravljalnica";
+// konvencija: go_package = "import/path;packageName"
+option go_package = "github.com/ab76015/razpravljalnica/api/pb;razpravljalnica";
 
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
