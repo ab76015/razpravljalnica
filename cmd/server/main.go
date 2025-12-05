@@ -9,7 +9,7 @@ import (
 )
 
 type server struct {
-    pb.UnimplementedRazpravljalnicaServer
+    pb.UnimplementedMessageBoardServer
 }
 
 func main() {
@@ -19,7 +19,7 @@ func main() {
     }
 
     s := grpc.NewServer()
-    pb.RegisterRazpravljalnicaServer(s, &server{})
+    pb.RegisterMessageBoardServer(s, &server{})
 
     log.Println("Server listening on :50051")
     if err := s.Serve(lis); err != nil {
