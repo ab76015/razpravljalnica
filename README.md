@@ -1,5 +1,7 @@
 # Razpravljalnica
-
+<p align="center">
+  <img src="logo.png" alt="Logo Razpravljalnice">
+</p>
 Razpravljalnica je distribuirana spletna storitev za izmenjavo mnenj med uporabniki o različnih temah. Omogoča registracijo novih uporabnikov, dodajanje tem ter pošiljanje, urejanje in brisanje sporočil znotraj posameznih tem. Uporabniki lahko sledijo izbranim temam in sproti prejemajo obvestila o novih sporočilih. Prav tako je omogočeno všečkanje sporočil z beleženjem števila všečkov.
 
 ## Funkcionalnosti
