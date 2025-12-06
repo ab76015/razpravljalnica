@@ -20,15 +20,16 @@ Storitev je implementirana v programskem jeziku Go z uporabo gRPC za komunikacij
 
 razpravljalnica/
 ├── api/
-│ ├── proto/ # Definicija gRPC in Protocol Buffers vmesnika
-│ └── pb/ # Samodejno generirana Go koda iz .proto
+│   ├── proto/        # Definicija gRPC in Protocol Buffers vmesnika
+│   └── pb/           # Samodejno generirana Go koda iz .proto
 │
 ├── cmd/
-│ ├── server/ # Izvršljiva koda strežnika (backend)
-│ └── client/ # Odjemalec za testiranje in interakcijo s strežnikom
+│   ├── server/       # Izvršljiva koda strežnika (backend)
+│   └── client/       # Odjemalec za testiranje in interakcijo s strežnikom
 │
-├── internal/ # Implementacija poslovne logike in pomožnih paketov
-└── go.mod # Modul za upravljanje odvisnosti
+├── internal/         # Implementacija poslovne logike in pomožnih paketov
+└── go.mod            # Modul za upravljanje odvisnosti
+
 
 
 ## Navodila za razvoj in zagon
