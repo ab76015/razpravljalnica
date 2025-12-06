@@ -17,7 +17,7 @@ Razpravljalnica je distribuirana spletna storitev za izmenjavo mnenj med uporabn
 Storitev je implementirana v programskem jeziku Go z uporabo gRPC za komunikacijo med strežnikom in odjemalci. Komunikacija med strežniškimi vozlišči je izvedena preko RPC protokola. Vsa podatkovna struktura in vmesnik so definirani v Protocol Buffers (`.proto`) datotekah, iz katerih je samodejno generirana Go koda za strežniški in odjemalski vmesnik.
 
 ## Struktura projekta
-
+```
 razpravljalnica/
 ├── api/
 │   ├── proto/        # Definicija gRPC in Protocol Buffers vmesnika
@@ -29,7 +29,7 @@ razpravljalnica/
 │
 ├── internal/         # Implementacija poslovne logike in pomožnih paketov
 └── go.mod            # Modul za upravljanje odvisnosti
-
+```
 
 
 ## Navodila za razvoj in zagon
