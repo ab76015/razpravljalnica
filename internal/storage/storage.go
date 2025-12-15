@@ -25,12 +25,13 @@ type Message struct {
     Likes int32
 }
 
+
 type Storage interface {
     CreateUser(name string) (*User, error)
     CreateTopic(name string) (*Topic, error)
     PostMessage(topicID int64, userID int64, text string) (*Message, error)
-    UpdateMessage(userID, msgID int64, text string) (*Message, error)
-    DeleteMessage(userID, msgID int64) error
+    UpdateMessage(topicID int64, userID int64, msgID int64, text string) (*Message, error)
+    DeleteMessage(topicID int64, userID int64, msgID int64) (*Message, error)
     //...add more methods below
 }
 

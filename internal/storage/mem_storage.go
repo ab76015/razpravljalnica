@@ -78,13 +78,16 @@ func (m *MemStorage) PostMessage(topicID, userID int64, text string) (*Message, 
     return msg, nil
 }
 
-func (m *MemStorage) UpdateMessage(userID, msgID int64, text string) (*Message, error) {
+func (m *MemStorage) UpdateMessage(topicID, userID, msgID int64, text string) (*Message, error) {
     m.mu.Lock()
     defer m.mu.Unlock()
 
     msg, ok := m.messages[msgID];
     if !ok {
         return nil, errors.New("message not found")
+    }
+    if msg.TopicID != topicID {
+        return nil, errors.New("message not in topic")
     }
     if msg.UserID != userID {
         return nil, errors.New("incorrect user id")
@@ -94,7 +97,7 @@ func (m *MemStorage) UpdateMessage(userID, msgID int64, text string) (*Message, 
     return msg, nil
 }
 
-func (m *MemStorage) DeleteMessage(userID, msgID int64) error {
+func (m *MemStorage) DeleteMessage(topicID, userID, msgID int64) (*Message, error) {
     m.mu.Lock()
     defer m.mu.Unlock()
 
@@ -102,10 +105,14 @@ func (m *MemStorage) DeleteMessage(userID, msgID int64) error {
     if !ok {
         return nil, errors.New("message not found")
     }
+    if msg.TopicID != topicID {
+        return nil, errors.New("message not in topic")
+    }
     if msg.UserID != userID {
         return nil, errors.New("incorrect user id")
     }
 
     delete(m.messages, msgID)
-    return nil
+    return nil, nil
 }
+
