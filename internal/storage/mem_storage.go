@@ -77,3 +77,19 @@ func (m *MemStorage) PostMessage(topicID, userID int64, text string) (*Message, 
     m.nextMsgID++
     return msg, nil
 }
+
+func (m *MemStorage) UpdateMessage(userID, msgID int64, text string) (*Message, error) {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+
+    msg, ok := m.messages[msgID];
+    if !ok {
+        return nil, errors.New("message not found")
+    }
+    if msg.UserID != userID {
+        return nil, errors.New("incorrect user id")
+    }
+
+    msg.Text = text
+    return msg, nil
+}

@@ -29,6 +29,7 @@ type Storage interface {
     CreateUser(name string) (*User, error)
     CreateTopic(name string) (*Topic, error)
     PostMessage(topicID int64, userID int64, text string) 
+    UpdateMessage(userID, msgID int64, text string)
     //...add more methods below
 }
 
