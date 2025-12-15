@@ -36,8 +36,8 @@ type Storage interface {
     CreateTopic(name string) (*Topic, error)
     PostMessage(topicID int64, userID int64, text string) (*Message, error)
     UpdateMessage(topicID int64, userID int64, msgID int64, text string) (*Message, error)
-    DeleteMessage(topicID int64, userID int64, msgID int64) (*Message, error)
-    LikeMessage(topicID int64, msgID int64, userID int64) error
+    DeleteMessage(topicID int64, userID int64, msgID int64) error
+    LikeMessage(topicID int64, msgID int64, userID int64) (*Message, error)
     //...add more methods below
 }
 

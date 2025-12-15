@@ -99,35 +99,9 @@ func (m *MemStorage) UpdateMessage(topicID, userID, msgID int64, text string) (*
     return msg, nil
 }
 
-func (m *MemStorage) DeleteMessage(topicID, userID, msgID int64) (*Message, error) {
+func (m *MemStorage) DeleteMessage(topicID, userID, msgID int64) error {
     m.mu.Lock()
     defer m.mu.Unlock()
-
-    msg, ok := m.messages[msgID];
-    if !ok {
-        return nil, errors.New("message not found")
-    }
-    if msg.TopicID != topicID {
-        return nil, errors.New("message not in topic")
-    }
-    if msg.UserID != userID {
-        return nil, errors.New("incorrect user id")
-    }
-
-    delete(m.messages, msgID)
-    return nil, nil
-}
-
-func (m* MemStorage) LikeMessage(topicID, msgID, userID int64) error {
-    m.mu.Lock()
-    defer m.mu.Unlock()
-
-    if _, ok := m.topics[topicID]; !ok {
-        return errors.New("topic not found")
-    }
-    if _, ok := m.users[userID]; !ok {
-        return errors.New("user not found")
-    }
 
     msg, ok := m.messages[msgID];
     if !ok {
@@ -135,6 +109,32 @@ func (m* MemStorage) LikeMessage(topicID, msgID, userID int64) error {
     }
     if msg.TopicID != topicID {
         return errors.New("message not in topic")
+    }
+    if msg.UserID != userID {
+        return errors.New("incorrect user id")
+    }
+
+    delete(m.messages, msgID)
+    return nil
+}
+
+func (m* MemStorage) LikeMessage(topicID, msgID, userID int64) (*Message, error) {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+
+    if _, ok := m.topics[topicID]; !ok {
+        return nil, errors.New("topic not found")
+    }
+    if _, ok := m.users[userID]; !ok {
+        return nil, errors.New("user not found")
+    }
+
+    msg, ok := m.messages[msgID];
+    if !ok {
+        return nil, errors.New("message not found")
+    }
+    if msg.TopicID != topicID {
+        return nil, errors.New("message not in topic")
     }
 
     like := Like{
@@ -144,12 +144,12 @@ func (m* MemStorage) LikeMessage(topicID, msgID, userID int64) error {
     }
 
     if _, exists := m.likes[like]; exists {
-        return errors.New("message already liked")
+        return nil, errors.New("message already liked")
     }
 
     m.likes[like] = struct{}{}
     msg.Likes++
 
-    return nil
+    return msg, nil
 }
 
