@@ -28,8 +28,9 @@ type Message struct {
 type Storage interface {
     CreateUser(name string) (*User, error)
     CreateTopic(name string) (*Topic, error)
-    PostMessage(topicID int64, userID int64, text string) 
-    UpdateMessage(userID, msgID int64, text string)
+    PostMessage(topicID int64, userID int64, text string) (*Message, error)
+    UpdateMessage(userID, msgID int64, text string) (*Message, error)
+    DeleteMessage(userID, msgID int64) error
     //...add more methods below
 }
 
