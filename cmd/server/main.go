@@ -10,6 +10,7 @@ import (
 )
 
 func main() {
+    /*
     lis, _ := net.Listen("tcp", ":50051")
     memStore := storage.NewMemStorage()
     srv := server.NewServer(memStore)
@@ -17,6 +18,6 @@ func main() {
     grpcServer := grpc.NewServer()
     pb.RegisterMessageBoardServer(grpcServer, srv)
 
-    grpcServer.Serve(lis)
+    grpcServer.Serve(lis)*/
 }
 
