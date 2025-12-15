@@ -12,6 +12,7 @@ type MemStorage struct {
     users map[int64]*User
     topics map[int64]*Topic
     messages map[int64]*Message
+    likes map[Like]struct{}
     nextUserID int64
     nextTopicID int64
     nextMsgID int64
@@ -22,6 +23,7 @@ func NewMemStorage() *MemStorage {
         users: make(map[int64]*User),
         topics: make(map[int64]*Topic),
         messages: make(map[int64]*Message),
+        likes: make(map[Like]struct{}),
         nextUserID:  1,
         nextTopicID: 1,
         nextMsgID:   1,
@@ -114,5 +116,40 @@ func (m *MemStorage) DeleteMessage(topicID, userID, msgID int64) (*Message, erro
 
     delete(m.messages, msgID)
     return nil, nil
+}
+
+func (m* MemStorage) LikeMessage(topicID, msgID, userID int64) error {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+
+    if _, ok := m.topics[topicID]; !ok {
+        return errors.New("topic not found")
+    }
+    if _, ok := m.users[userID]; !ok {
+        return errors.New("user not found")
+    }
+
+    msg, ok := m.messages[msgID];
+    if !ok {
+        return errors.New("message not found")
+    }
+    if msg.TopicID != topicID {
+        return errors.New("message not in topic")
+    }
+
+    like := Like{
+        TopicID:     topicID,
+        MessageID:   msgID,
+        UserID:      userID,
+    }
+
+    if _, exists := m.likes[like]; exists {
+        return errors.New("message already liked")
+    }
+
+    m.likes[like] = struct{}{}
+    msg.Likes++
+
+    return nil
 }
 
