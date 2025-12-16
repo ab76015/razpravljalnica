@@ -65,3 +65,35 @@ func (s *Server) LikeMessage(ctx context.Context, in *pb.LikeMessageRequest) (*p
     return &pb.Message{Id : message.ID, TopicId: message.TopicID, UserId: message.UserID, Text: message.Text, CreatedAt: timestamppb.New(message.CreatedAt), Likes: message.Likes}, nil
 }
 
+func (s *Server) GetSubcscriptionNode(ctx context.Context, in *pb.SubscriptionNodeRequest) (*pb.SubscriptionNodeResponse, error) {
+    token, node, err := s.storage.GetSubscriptionNode(in.UserId, in.TopicId)
+    if err != nil {
+        return nil, err
+    }
+    return &pb.SubscriptionNodeResponse{SubscribeToken: token, Node: &pb.NodeInfo{ NodeId:  node.NodeID, Address: node.Address, }, }, nil
+}
+
+func (s *Server) ListTopics(ctx context.Context,_ *emptypb.Empty) (*pb.ListTopicsResponse, error) {
+    topics, err := s.storage.ListTopics()
+    if err != nil {
+        return nil, err
+    }
+    response := &pb.ListTopicsResponse{}
+    for _, topic := range topics {
+        response.Topics = append(response.Topics, &pb.Topic{Id: topic.ID, Name: topic.Name })
+    }
+    return response, nil
+}
+
+func (s *Server) GetMessages(ctx context.Context,in *pb.GetMessagesRequest) (*pb.GetMessagesResponse, error) {
+    msgs, err := s.storage.GetMessages(in.TopicId, in.FromMessageId, in.Limit)
+    if err != nil {
+        return nil, err
+    }
+
+    response := &pb.GetMessagesResponse{}
+    for _, m := range msgs {
+        response.Messages = append(response.Messages, &pb.Message{Id: m.ID, TopicId: m.TopicID, UserId: m.UserID, Text: m.Text, CreatedAt: timestamppb.New(m.CreatedAt), Likes: m.Likes, })
+    }
+    return response, nil
+}

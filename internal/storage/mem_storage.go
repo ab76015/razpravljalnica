@@ -4,7 +4,8 @@ package storage
 import (
     "errors"
     "sync"
-    "time"    
+    "time"
+    "fmt"    
 )
 
 type MemStorage struct {
@@ -151,5 +152,65 @@ func (m* MemStorage) LikeMessage(topicID, msgID, userID int64) (*Message, error)
     msg.Likes++
 
     return msg, nil
+}
+
+func (m* MemStorage) GetSubscriptionNode(userID int64, topicIDs []int64) (string, *NodeInfo, error) {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+
+    if _, ok := m.users[userID]; !ok {
+        return "", nil, errors.New("user not found")
+    }
+    for _, id := range topicIDs {
+        if _, ok := m.topics[id]; !ok {
+            return "", nil, errors.New("topic " + fmt.Sprint(id)+ " not found")
+        }
+    }
+
+    token := "subscribtionToken"
+
+    node := &NodeInfo{
+        NodeID:  "node",
+        Address: "localhost:50051",
+    }
+
+    return token, node, nil
+}
+
+func (m* MemStorage) ListTopics() ([]*Topic, error) {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+
+    topics := make([]*Topic, 0, len(m.topics))
+    for _, topic := range m.topics {
+        topics = append(topics, topic)
+    }
+    return topics, nil
+}
+
+func (m *MemStorage) GetMessages(topicID, fromMsgID int64, limit int32) ([]*Message, error) {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+
+    if _, ok := m.topics[topicID]; !ok {
+        return nil, errors.New("topic not found")
+    }
+
+    if limit <= 0 {
+        return nil, errors.New("limit less than 1")
+    }
+
+    messages := []*Message{}
+    for id := fromMsgID + 1; id < m.nextMsgID; id++ {
+        msg, ok := m.messages[id]
+        if !ok || msg.TopicID != topicID {
+            continue
+        }
+        messages = append(messages, msg)
+        if int32(len(messages)) >= limit {
+            break
+        }
+    }
+    return messages, nil
 }
 
