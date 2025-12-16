@@ -1,7 +1,9 @@
-package server
+package main
 
 import (
     "context"
+    "google.golang.org/protobuf/types/known/emptypb"
+    "google.golang.org/protobuf/types/known/timestamppb"
     pb "github.com/ab76015/razpravljalnica/api/pb"
     "github.com/ab76015/razpravljalnica/internal/storage"
 )
@@ -36,7 +38,7 @@ func (s *Server) PostMessage(ctx context.Context, in *pb.PostMessageRequest) (*p
     if err != nil {
         return nil, err
     }
-    return &pb.Message{Id : message.ID, TopicId: message.TopicID, UserId: message.UserID, Text: message.Text, CreatedAt: message.CreatedAt, Likes: message.Likes}, nil
+    return &pb.Message{Id : message.ID, TopicId: message.TopicID, UserId: message.UserID, Text: message.Text, CreatedAt: timestamppb.New(message.CreatedAt), Likes: message.Likes}, nil
 }
 
 func (s *Server) UpdateMessage(ctx context.Context, in *pb.UpdateMessageRequest) (*pb.Message, error) {
@@ -44,7 +46,7 @@ func (s *Server) UpdateMessage(ctx context.Context, in *pb.UpdateMessageRequest)
     if err != nil {
         return nil, err
     }
-    return &pb.Message{Id : message.ID, TopicId: message.TopicID, UserId: message.UserID, Text: message.Text, CreatedAt: message.CreatedAt, Likes: message.Likes}, nil
+    return &pb.Message{Id : message.ID, TopicId: message.TopicID, UserId: message.UserID, Text: message.Text, CreatedAt: timestamppb.New(message.CreatedAt), Likes: message.Likes}, nil
 }
 
 func (s *Server) DeleteMessage(ctx context.Context, in *pb.DeleteMessageRequest) (*emptypb.Empty, error) {
@@ -60,6 +62,6 @@ func (s *Server) LikeMessage(ctx context.Context, in *pb.LikeMessageRequest) (*p
     if err != nil {
         return nil, err
     }
-    return &pb.Message{Id : message.ID, TopicId: message.TopicID, UserId: message.UserID, Text: message.Text, CreatedAt: message.CreatedAt, Likes: message.Likes}, nil
+    return &pb.Message{Id : message.ID, TopicId: message.TopicID, UserId: message.UserID, Text: message.Text, CreatedAt: timestamppb.New(message.CreatedAt), Likes: message.Likes}, nil
 }
 

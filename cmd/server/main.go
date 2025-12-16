@@ -10,14 +10,19 @@ import (
 )
 
 func main() {
-    /*
-    lis, _ := net.Listen("tcp", ":50051")
-    memStore := storage.NewMemStorage()
-    srv := server.NewServer(memStore)
+    lis, err := net.Listen("tcp", ":50051") //port kjer prejemamo client requeste
+    if err != nil {
+        log.Fatal(err)
+    }
 
-    grpcServer := grpc.NewServer()
-    pb.RegisterMessageBoardServer(grpcServer, srv)
+    grpcServer := grpc.NewServer() //ustvari instanco grpc serverja
 
-    grpcServer.Serve(lis)*/
+    st := storage.NewMemStorage()
+    srv := NewServer(st)
+
+    pb.RegisterMessageBoardServer(grpcServer, srv) //povezemo z naso implementacijo
+
+    log.Println("listening on :50051")
+    grpcServer.Serve(lis) //server tu blokira do klica Stop() ali dokler proces ni killed
 }
 
