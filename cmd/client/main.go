@@ -20,7 +20,7 @@ func main() {
         panic(err)     
     }
     defer conn.Close()
-    //ko imamo gRPC kanal, potrebujemo client stub za RPC; dobimo ga z NewRouteGuideClient iz pb package
+    //ko imamo gRPC kanal, potrebujemo client stub za RPC; dobimo ga z NewMessageBoardClient iz pb package
     client := pb.NewMessageBoardClient(conn)
     
     ctx := context.Background()
@@ -93,4 +93,16 @@ func main() {
     for _, m := range messages.Messages {
         fmt.Println(m)
     }
+
+    m, _ = client.LikeMessage(ctx, &pb.LikeMessageRequest{
+        TopicId: t.Id,
+        UserId:  u.Id,
+        MessageId: m.Id,
+    })
+    m, _ = client.LikeMessage(ctx, &pb.LikeMessageRequest{
+        TopicId: t.Id,
+        UserId:  u.Id,
+        MessageId: m.Id,
+    })
+    fmt.Println(m)
 }   

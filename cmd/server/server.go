@@ -65,14 +65,6 @@ func (s *Server) LikeMessage(ctx context.Context, in *pb.LikeMessageRequest) (*p
     return &pb.Message{Id : message.ID, TopicId: message.TopicID, UserId: message.UserID, Text: message.Text, CreatedAt: timestamppb.New(message.CreatedAt), Likes: message.Likes}, nil
 }
 
-func (s *Server) GetSubcscriptionNode(ctx context.Context, in *pb.SubscriptionNodeRequest) (*pb.SubscriptionNodeResponse, error) {
-    token, node, err := s.storage.GetSubscriptionNode(in.UserId, in.TopicId)
-    if err != nil {
-        return nil, err
-    }
-    return &pb.SubscriptionNodeResponse{SubscribeToken: token, Node: &pb.NodeInfo{ NodeId:  node.NodeID, Address: node.Address, }, }, nil
-}
-
 func (s *Server) ListTopics(ctx context.Context,_ *emptypb.Empty) (*pb.ListTopicsResponse, error) {
     topics, err := s.storage.ListTopics()
     if err != nil {

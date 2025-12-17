@@ -31,11 +31,6 @@ type Like struct {
     UserID int64
 }
 
-type NodeInfo struct {
-    NodeID string
-    Address string
-}
-
 type Storage interface {
     CreateUser(name string) (*User, error)
     CreateTopic(name string) (*Topic, error)
@@ -43,9 +38,7 @@ type Storage interface {
     UpdateMessage(topicID int64, userID int64, msgID int64, text string) (*Message, error)
     DeleteMessage(topicID int64, userID int64, msgID int64) error
     LikeMessage(topicID int64, msgID int64, userID int64) (*Message, error)
-    GetSubscriptionNode(userID int64, topicIDs []int64) (string, *NodeInfo, error)
     ListTopics() ([]*Topic, error)
     GetMessages(topicID int64, fromMsgID int64, limit int32) ([]*Message, error)
-    //...add more methods below
 }
 
