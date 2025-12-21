@@ -1,14 +1,13 @@
 package control
 
-
 import (
     "sync"
     pb "github.com/ab76015/razpravljalnica/api/pb"   
-) 
+)
 
 // ChainState hrani stanje verige
 type ChainState struct {
-    mu sync.RWMutex()
+    mu sync.RWMutex
     Head *pb.NodeInfo
     Tail *pb.NodeInfo
     Middles []*pb.NodeInfo
@@ -18,12 +17,12 @@ type ChainState struct {
 func NewChainState(head, tail *pb.NodeInfo, middles []*pb.NodeInfo) *ChainState {
     return &ChainState{
         Head: head,
-        Taul: tail,
+        Tail: tail,
         Middles: middles,
     }
 }
 
-// GetClusterState vrne stanje verige; uporabimo RW kljucavnico da vec bralcev hkrati bere
+// GetClusterState vrne stanje verige; uporabimo RW kljucavnico da vec bralcev hkrati bere; ni grpc metoda
 func (cs *ChainState) GetClusterState() (*pb.NodeInfo, *pb.NodeInfo, []*pb.NodeInfo) {
     cs.mu.RLock()
     defer cs.mu.RUnlock()
