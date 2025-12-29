@@ -34,8 +34,6 @@ razpravljalnica/
 │   │   ├── storage.go         # Vmesnik Storage
 │   │   └── mem_storage.go     # Implementacija v delovnem pomnilniku
 │   │
-│   ├── server/                # Implementacija gRPC MessageBoard strežnika
-│   │                           # (povezuje pb vmesnik s storage/replication)
 │   │
 │   ├── replication/           # Logika verižne replikacije
 │   │                           # (head → middle → tail, propagacija zapisov)
