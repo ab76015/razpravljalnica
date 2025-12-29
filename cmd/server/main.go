@@ -7,6 +7,7 @@ import (
     "google.golang.org/grpc"
     pb "github.com/ab76015/razpravljalnica/api/pb"
     "github.com/ab76015/razpravljalnica/internal/storage"
+    "github.com/ab76015/razpravljalnica/internal/replication"
 )
 
 func main() {
@@ -17,11 +18,16 @@ func main() {
 
     grpcServer := grpc.NewServer() //ustvari instanco grpc serverja
 
-    st := storage.NewMemStorage()
-    srv := NewServer(st)
+    storage := storage.NewMemStorage()
+    messageBoardSrv := NewMessageBoardServer(storage)
 
-    pb.RegisterMessageBoardServer(grpcServer, srv) //povezemo z naso implementacijo
-
+    nodeState := replication.NewNodeState()
+    replicationSrv := replication.NewDataNodeServer(nodeState)
+    
+    // povezemo z nasimi implementacijami
+    pb.RegisterMessageBoardServer(grpcServer, messageBoardSrv)
+    pb.RegisterDataNodeServer(grpcServer, replicationSrv)
+    
     log.Println("listening on :50051")
     grpcServer.Serve(lis) //server tu blokira do klica Stop() ali dokler proces ni killed
 }
