@@ -1,21 +1,55 @@
 package replication
 
 import (
+    "context"
+    "sync"
+
     pb "github.com/ab76015/razpravljalnica/api/pb"
-    "github.com/ab76015/razpravljalnica/internal/storage"
+    "google.golang.org/protobuf/types/known/emptypb"
 )
 
-const (
-    Head   = 0
-    Middle = 1
-    Tail   = 2
-)
+// NodeState vsebuje lokalno informacijo o sosedih in verzijo verige
+type NodeState struct {
+    mu          sync.RWMutex
+    predecessor *pb.NodeInfo
+    successor   *pb.NodeInfo
+    verzija      uint64
+}
 
-type Node struct {
-    Info   *pb.NodeInfo
-    Role   int
-    Store  storage.Storage
-    Next    pb.ReplicationClient
-    Prev    pb.ReplicationClient //za ACK
+// NewNodeState ustvari zacetno prazno stanje
+func NewNodeState() *NodeState {
+    return &NodeState{}
+}
+
+// UpdateConfig posodobi lokalno stanje verige za vozlisce
+func (ns *NodeState) UpdateConfig(cfg *pb.ChainConfig) {
+    ns.mu.Lock()
+    defer ns.mu.Unlock()
+    ns.predecessor = cfg.Predecessor
+    ns.successor = cfg.Successor
+    ns.epoch = cfg.Epoch
+}
+
+// GetState vrne trenutni config state
+func (ns *NodeState) GetState() (pred, succ *pb.NodeInfo, epoch uint64) {
+    ns.mu.RLock()
+    defer ns.mu.RUnlock()
+    return ns.predecessor, ns.successor, ns.epoch
+}
+
+// DataNodeServer implementira data node gRPC server interface (iz proto)
+type DataNodeServer struct {
+    pb.UnimplementedDataNodeServer
+    state *NodeState
+}
+
+func NewDataNodeServer(state *NodeState) *DataNodeServer {
+    return &DataNodeServer{state: state}
+}
+
+// UpdateChainConfig RPC ki ga klice kontrolna ravnina ko zeli posodobiti stanje streznika na podatkovni ravnini
+func (s *DataNodeServer) UpdateChainConfig(ctx context.Context, cfg *pb.ChainConfig) (*emptypb.Empty, error) {
+    s.state.UpdateConfig(cfg)
+    return &emptypb.Empty{}, nil
 }
 
