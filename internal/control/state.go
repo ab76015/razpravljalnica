@@ -20,7 +20,7 @@ func NewChainState() *ChainState {
     }
 }
 
-// NodesSnapshot vrne kopijo vozlisc in dolzino verige
+// NodesSnapshot vrne kopijo vozlisc in verzijo verige
 func (cs *ChainState) NodesSnapshot() ([]*pb.NodeInfo, uint64) {
     cs.mu.RLock()
     defer cs.mu.RUnlock()
@@ -30,7 +30,7 @@ func (cs *ChainState) NodesSnapshot() ([]*pb.NodeInfo, uint64) {
     return nodes, cs.version
 }
 
-// Snapshot vrne glavo, rep in dolzino verige
+// Snapshot vrne glavo, rep in verzijo verige
 func (cs *ChainState) Snapshot() (head, tail *pb.NodeInfo, version uint64) {
     cs.mu.RLock()
     defer cs.mu.RUnlock()
