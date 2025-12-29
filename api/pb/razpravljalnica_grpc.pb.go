@@ -20,6 +20,118 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	DataNode_UpdateChainConfig_FullMethodName = "/razpravljalnica.DataNode/UpdateChainConfig"
+)
+
+// DataNodeClient is the client API for DataNode service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// //////////////////////////////////////////////////////////////////////////////
+// Data plane
+// //////////////////////////////////////////////////////////////////////////////
+type DataNodeClient interface {
+	// Control plane pushes updated chain config to data node
+	UpdateChainConfig(ctx context.Context, in *ChainConfig, opts ...grpc.CallOption) (*emptypb.Empty, error)
+}
+
+type dataNodeClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewDataNodeClient(cc grpc.ClientConnInterface) DataNodeClient {
+	return &dataNodeClient{cc}
+}
+
+func (c *dataNodeClient) UpdateChainConfig(ctx context.Context, in *ChainConfig, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, DataNode_UpdateChainConfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// DataNodeServer is the server API for DataNode service.
+// All implementations must embed UnimplementedDataNodeServer
+// for forward compatibility.
+//
+// //////////////////////////////////////////////////////////////////////////////
+// Data plane
+// //////////////////////////////////////////////////////////////////////////////
+type DataNodeServer interface {
+	// Control plane pushes updated chain config to data node
+	UpdateChainConfig(context.Context, *ChainConfig) (*emptypb.Empty, error)
+	mustEmbedUnimplementedDataNodeServer()
+}
+
+// UnimplementedDataNodeServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedDataNodeServer struct{}
+
+func (UnimplementedDataNodeServer) UpdateChainConfig(context.Context, *ChainConfig) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateChainConfig not implemented")
+}
+func (UnimplementedDataNodeServer) mustEmbedUnimplementedDataNodeServer() {}
+func (UnimplementedDataNodeServer) testEmbeddedByValue()                  {}
+
+// UnsafeDataNodeServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to DataNodeServer will
+// result in compilation errors.
+type UnsafeDataNodeServer interface {
+	mustEmbedUnimplementedDataNodeServer()
+}
+
+func RegisterDataNodeServer(s grpc.ServiceRegistrar, srv DataNodeServer) {
+	// If the following call panics, it indicates UnimplementedDataNodeServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&DataNode_ServiceDesc, srv)
+}
+
+func _DataNode_UpdateChainConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ChainConfig)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DataNodeServer).UpdateChainConfig(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DataNode_UpdateChainConfig_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DataNodeServer).UpdateChainConfig(ctx, req.(*ChainConfig))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// DataNode_ServiceDesc is the grpc.ServiceDesc for DataNode service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var DataNode_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "razpravljalnica.DataNode",
+	HandlerType: (*DataNodeServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "UpdateChainConfig",
+			Handler:    _DataNode_UpdateChainConfig_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "razpravljalnica.proto",
+}
+
+const (
 	MessageBoard_CreateUser_FullMethodName           = "/razpravljalnica.MessageBoard/CreateUser"
 	MessageBoard_CreateTopic_FullMethodName          = "/razpravljalnica.MessageBoard/CreateTopic"
 	MessageBoard_PostMessage_FullMethodName          = "/razpravljalnica.MessageBoard/PostMessage"

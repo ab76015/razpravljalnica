@@ -2,7 +2,9 @@ package control
 
 import (
     "context"
-
+    "log"
+    "time"
+    "google.golang.org/grpc"
     pb "github.com/ab76015/razpravljalnica/api/pb"
     "google.golang.org/protobuf/types/known/emptypb"
 )
@@ -43,10 +45,47 @@ func buildConfigForIndex(idx int, state *ChainState) *pb.ChainConfig {
     }
 }
 
+// notifyAllNodes se klice vsakic ko controlserver dobi nov join v verigo, 
+// zato da vsem starejsim vozliscem posodobimo ChainConfig na pod. ravnini
+func (s *ControlServer) notifyAllNodes() {
+    nodes, _ := s.state.NodesSnapshot()
+
+    for idx, node := range nodes {
+        go func(i int, n *pb.NodeInfo) {
+            conn, err := grpc.Dial(n.Address, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(3*time.Second))
+            if err != nil {
+                log.Printf("Failed to dial node %s at %s: %v", n.NodeId, n.Address, err)
+                return
+            }
+            defer conn.Close()
+
+            client := pb.NewDataNodeClient(conn)
+
+            ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+            defer cancel()
+
+            // Build config for THIS node's index
+            cfg := buildConfigForIndex(i, s.state)
+
+            _, err = client.UpdateChainConfig(ctx, cfg)
+            if err != nil {
+                log.Printf("Failed to update config for node %s: %v", n.NodeId, err)
+            } else {
+                log.Printf("Updated config sent to node %s", n.NodeId)
+            }
+        }(idx, node)
+    }
+}
+
 // Join klicejo vozlisca iz podatkovne ravnine ko se zelijo povezati
 func (s *ControlServer) Join(ctx context.Context, node *pb.NodeInfo) (*pb.ChainConfig, error) {
     idx := s.state.AddNode(node)
-    return buildConfigForIndex(idx, s.state), nil
+    newConfig := buildConfigForIndex(idx, s.state)
+
+    // Push nov config vsem starim vozliscem v podatkovni ravnini asinhrono
+    s.notifyAllNodes()
+
+    return newConfig, nil
 }
 
 // GetClusterState vrne stanje verige (no predecessor/successor)

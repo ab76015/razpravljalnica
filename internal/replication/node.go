@@ -13,7 +13,7 @@ type NodeState struct {
     mu          sync.RWMutex
     predecessor *pb.NodeInfo
     successor   *pb.NodeInfo
-    verzija      uint64
+    version      uint64
 }
 
 // NewNodeState ustvari zacetno prazno stanje
@@ -27,14 +27,14 @@ func (ns *NodeState) UpdateConfig(cfg *pb.ChainConfig) {
     defer ns.mu.Unlock()
     ns.predecessor = cfg.Predecessor
     ns.successor = cfg.Successor
-    ns.epoch = cfg.Epoch
+    ns.version = cfg.Version
 }
 
 // GetState vrne trenutni config state
-func (ns *NodeState) GetState() (pred, succ *pb.NodeInfo, epoch uint64) {
+func (ns *NodeState) GetState() (pred, succ *pb.NodeInfo, version uint64) {
     ns.mu.RLock()
     defer ns.mu.RUnlock()
-    return ns.predecessor, ns.successor, ns.epoch
+    return ns.predecessor, ns.successor, ns.version
 }
 
 // DataNodeServer implementira data node gRPC server interface (iz proto)

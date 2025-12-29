@@ -51,6 +51,10 @@ message NodeInfo {
 ////////////////////////////////////////////////////////////////////////////////
 // Data plane
 ////////////////////////////////////////////////////////////////////////////////
+service DataNode {
+  // Control plane pushes updated chain config to data node
+  rpc UpdateChainConfig(ChainConfig) returns (google.protobuf.Empty);
+}
 
 service  MessageBoard{
   // Writes (only to head)
