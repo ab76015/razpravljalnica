@@ -7,52 +7,49 @@ import (
 
 // ChainState hrani stanje verige
 type ChainState struct {
-    mu sync.RWMutex
-    Head *pb.NodeInfo
-    Tail *pb.NodeInfo
-    Middles []*pb.NodeInfo
+    mu     sync.RWMutex
+    epoch  uint64
+    nodes  []*pb.NodeInfo // urejeno kot: [head, ..., tail]
 }
 
 // NewChainState ustvari začetno stanje verige
-func NewChainState(head, tail *pb.NodeInfo, middles []*pb.NodeInfo) *ChainState {
+func NewChainState() *ChainState {
     return &ChainState{
-        Head: head,
-        Tail: tail,
-        Middles: middles,
+        nodes: make([]*pb.NodeInfo, 0),
+        epoch:  0,
     }
 }
 
-// GetClusterState vrne stanje verige; uporabimo RW kljucavnico da vec bralcev hkrati bere; ni grpc metoda
-func (cs *ChainState) GetClusterState() (*pb.NodeInfo, *pb.NodeInfo, []*pb.NodeInfo) {
+// NodesSnapshot vrne kopijo vozlisc in dolzino verige
+func (cs *ChainState) NodesSnapshot() ([]*pb.NodeInfo, uint64) {
     cs.mu.RLock()
     defer cs.mu.RUnlock()
 
-    //kopije da ne pride do race condition
-    head := &pb.NodeInfo{
-        NodeId: cs.Head.NodeId, 
-        Address: cs.Head.Address,
-    }
-    tail := &pb.NodeInfo{
-        NodeId: cs.Tail.NodeId, 
-        Address: cs.Tail.Address, 
-    }
-    middles := make([]*pb.NodeInfo, len(cs.Middles))
-    for i, m := range cs.Middles {
-        middles[i] = &pb.NodeInfo{
-            NodeId: m.NodeId,
-            Address: m.Address,
-        }
-    }
-    return head, tail, middles
+    nodes := make([]*pb.NodeInfo, len(cs.nodes))
+    copy(nodes, cs.nodes)
+    return nodes, cs.epoch
 }
 
-// SetChain posodobi celo stanje verige atomarno; bo klical master v nadzorni ravnini; ni grpc metoda
-func (cs *ChainState) SetChain(head *pb.NodeInfo, tail *pb.NodeInfo, middles []*pb.NodeInfo) {
+// Snapshot vrne glavo, rep in dolzino verige
+func (cs *ChainState) Snapshot() (head, tail *pb.NodeInfo, epoch uint64) {
+    cs.mu.RLock()
+    defer cs.mu.RUnlock()
+
+    if len(cs.nodes) == 0 {
+        return nil, nil, cs.epoch
+    }
+
+    return cs.nodes[0], cs.nodes[len(cs.nodes)-1], cs.epoch
+}
+
+// AddNode doda vozlisce na rep in vrne njegov index
+func (cs *ChainState) AddNode(node *pb.NodeInfo) int {
     cs.mu.Lock()
     defer cs.mu.Unlock()
-    cs.Head = head
-    cs.Tail = tail
-    cs.Middles = middles
+
+    cs.nodes = append(cs.nodes, node)
+    cs.epoch++
+    return len(cs.nodes) - 1
 }
 
 /*
