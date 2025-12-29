@@ -8,7 +8,7 @@ import (
 // ChainState hrani stanje verige
 type ChainState struct {
     mu     sync.RWMutex
-    epoch  uint64
+    version  uint64
     nodes  []*pb.NodeInfo // urejeno kot: [head, ..., tail]
 }
 
@@ -16,7 +16,7 @@ type ChainState struct {
 func NewChainState() *ChainState {
     return &ChainState{
         nodes: make([]*pb.NodeInfo, 0),
-        epoch:  0,
+        version:  0,
     }
 }
 
@@ -27,19 +27,19 @@ func (cs *ChainState) NodesSnapshot() ([]*pb.NodeInfo, uint64) {
 
     nodes := make([]*pb.NodeInfo, len(cs.nodes))
     copy(nodes, cs.nodes)
-    return nodes, cs.epoch
+    return nodes, cs.version
 }
 
 // Snapshot vrne glavo, rep in dolzino verige
-func (cs *ChainState) Snapshot() (head, tail *pb.NodeInfo, epoch uint64) {
+func (cs *ChainState) Snapshot() (head, tail *pb.NodeInfo, version uint64) {
     cs.mu.RLock()
     defer cs.mu.RUnlock()
 
     if len(cs.nodes) == 0 {
-        return nil, nil, cs.epoch
+        return nil, nil, cs.version
     }
 
-    return cs.nodes[0], cs.nodes[len(cs.nodes)-1], cs.epoch
+    return cs.nodes[0], cs.nodes[len(cs.nodes)-1], cs.version
 }
 
 // AddNode doda vozlisce na rep in vrne njegov index
@@ -48,7 +48,7 @@ func (cs *ChainState) AddNode(node *pb.NodeInfo) int {
     defer cs.mu.Unlock()
 
     cs.nodes = append(cs.nodes, node)
-    cs.epoch++
+    cs.version++
     return len(cs.nodes) - 1
 }
 

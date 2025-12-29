@@ -165,10 +165,15 @@ message MessageEvent {
 
 // Return the the head and the tail node address
 service ControlPlane {
-  rpc GetClusterState(google.protobuf.Empty) returns (GetClusterStateResponse);
+  rpc Join(NodeInfo) returns (ChainConfig);
+  rpc GetClusterState(google.protobuf.Empty) returns (ChainConfig);
 }
 
-message GetClusterStateResponse {
-  NodeInfo head = 1;
-  NodeInfo tail = 2;
+message ChainConfig {
+  uint64 version = 1;
+  NodeInfo head = 2;
+  NodeInfo tail = 3;
+  NodeInfo predecessor = 4;
+  NodeInfo successor = 5;
 }
+

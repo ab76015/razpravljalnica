@@ -12,11 +12,10 @@ const (
 )
 
 type Node struct {
-    Info *pb.NodeInfo
-
-    Role int // 0=head, 1=middle, 2=tail
-
-    Store storage.Storage
-    Next  pb.ReplicationClient
+    Info   *pb.NodeInfo
+    Role   int
+    Store  storage.Storage
+    Next    pb.ReplicationClient
+    Prev    pb.ReplicationClient //za ACK
 }
 

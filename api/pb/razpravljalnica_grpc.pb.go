@@ -488,6 +488,7 @@ var MessageBoard_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
+	ControlPlane_Join_FullMethodName            = "/razpravljalnica.ControlPlane/Join"
 	ControlPlane_GetClusterState_FullMethodName = "/razpravljalnica.ControlPlane/GetClusterState"
 )
 
@@ -497,7 +498,8 @@ const (
 //
 // Return the the head and the tail node address
 type ControlPlaneClient interface {
-	GetClusterState(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*GetClusterStateResponse, error)
+	Join(ctx context.Context, in *NodeInfo, opts ...grpc.CallOption) (*ChainConfig, error)
+	GetClusterState(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ChainConfig, error)
 }
 
 type controlPlaneClient struct {
@@ -508,9 +510,19 @@ func NewControlPlaneClient(cc grpc.ClientConnInterface) ControlPlaneClient {
 	return &controlPlaneClient{cc}
 }
 
-func (c *controlPlaneClient) GetClusterState(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*GetClusterStateResponse, error) {
+func (c *controlPlaneClient) Join(ctx context.Context, in *NodeInfo, opts ...grpc.CallOption) (*ChainConfig, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetClusterStateResponse)
+	out := new(ChainConfig)
+	err := c.cc.Invoke(ctx, ControlPlane_Join_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *controlPlaneClient) GetClusterState(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ChainConfig, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ChainConfig)
 	err := c.cc.Invoke(ctx, ControlPlane_GetClusterState_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -524,7 +536,8 @@ func (c *controlPlaneClient) GetClusterState(ctx context.Context, in *emptypb.Em
 //
 // Return the the head and the tail node address
 type ControlPlaneServer interface {
-	GetClusterState(context.Context, *emptypb.Empty) (*GetClusterStateResponse, error)
+	Join(context.Context, *NodeInfo) (*ChainConfig, error)
+	GetClusterState(context.Context, *emptypb.Empty) (*ChainConfig, error)
 	mustEmbedUnimplementedControlPlaneServer()
 }
 
@@ -535,7 +548,10 @@ type ControlPlaneServer interface {
 // pointer dereference when methods are called.
 type UnimplementedControlPlaneServer struct{}
 
-func (UnimplementedControlPlaneServer) GetClusterState(context.Context, *emptypb.Empty) (*GetClusterStateResponse, error) {
+func (UnimplementedControlPlaneServer) Join(context.Context, *NodeInfo) (*ChainConfig, error) {
+	return nil, status.Error(codes.Unimplemented, "method Join not implemented")
+}
+func (UnimplementedControlPlaneServer) GetClusterState(context.Context, *emptypb.Empty) (*ChainConfig, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetClusterState not implemented")
 }
 func (UnimplementedControlPlaneServer) mustEmbedUnimplementedControlPlaneServer() {}
@@ -557,6 +573,24 @@ func RegisterControlPlaneServer(s grpc.ServiceRegistrar, srv ControlPlaneServer)
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&ControlPlane_ServiceDesc, srv)
+}
+
+func _ControlPlane_Join_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(NodeInfo)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControlPlaneServer).Join(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ControlPlane_Join_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControlPlaneServer).Join(ctx, req.(*NodeInfo))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _ControlPlane_GetClusterState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -584,6 +618,10 @@ var ControlPlane_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "razpravljalnica.ControlPlane",
 	HandlerType: (*ControlPlaneServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "Join",
+			Handler:    _ControlPlane_Join_Handler,
+		},
 		{
 			MethodName: "GetClusterState",
 			Handler:    _ControlPlane_GetClusterState_Handler,

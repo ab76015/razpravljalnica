@@ -18,11 +18,11 @@ func NewControlServer(state *ChainState) *ControlServer {
 
 // buildConfigForIndex prebere stanje verige, uposteva meje in izracuna predhodnika in naslednika in vrne ChainConfig
 func buildConfigForIndex(idx int, state *ChainState) *pb.ChainConfig {
-    nodes, epoch := state.NodesSnapshot()
+    nodes, version := state.NodesSnapshot()
     
     //ce je veriga še prazna
     if len(nodes) == 0 {
-        return &pb.ChainConfig{Epoch: epoch}
+        return &pb.ChainConfig{Version: version}
     }
 
     var pred, succ *pb.NodeInfo
@@ -35,14 +35,13 @@ func buildConfigForIndex(idx int, state *ChainState) *pb.ChainConfig {
     }
 
     return &pb.ChainConfig{
-        Epoch:       epoch,
+        Version:     version,
         Head:        nodes[0],
         Tail:        nodes[len(nodes)-1],
         Predecessor: pred,
         Successor:   succ,
     }
 }
-
 
 // Join klicejo vozlisca iz podatkovne ravnine ko se zelijo povezati
 func (s *ControlServer) Join(ctx context.Context, node *pb.NodeInfo) (*pb.ChainConfig, error) {
@@ -52,10 +51,10 @@ func (s *ControlServer) Join(ctx context.Context, node *pb.NodeInfo) (*pb.ChainC
 
 // GetClusterState vrne stanje verige (no predecessor/successor)
 func (s *ControlServer) GetClusterState(ctx context.Context, _ *emptypb.Empty) (*pb.ChainConfig, error) {
-    head, tail, epoch := s.state.Snapshot()
+    head, tail, version := s.state.Snapshot()
 
     return &pb.ChainConfig{
-        Epoch: epoch,
+        Version: version,
         Head:  head,
         Tail:  tail,
     }, nil
