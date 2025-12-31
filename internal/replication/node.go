@@ -13,12 +13,15 @@ type NodeState struct {
     mu          sync.RWMutex
     predecessor *pb.NodeInfo
     successor   *pb.NodeInfo
-    version      uint64
+    self        *pb.NodeInfo
+    head        *pb.NodeInfo
+    tail        *pb.NodeInfo
+    version     uint64
 }
 
 // NewNodeState ustvari zacetno prazno stanje
-func NewNodeState() *NodeState {
-    return &NodeState{}
+func NewNodeState(self *pb.NodeInfo) *NodeState {
+    return &NodeState{self: self}
 }
 
 // UpdateConfig posodobi lokalno stanje verige za vozlisce
@@ -27,7 +30,23 @@ func (ns *NodeState) UpdateConfig(cfg *pb.ChainConfig) {
     defer ns.mu.Unlock()
     ns.predecessor = cfg.Predecessor
     ns.successor = cfg.Successor
+    ns.head = cfg.Head
+    ns.tail = cfg.Tail
     ns.version = cfg.Version
+}
+
+// IsHead preveri ali je vozlisce glava
+func (ns *NodeState) IsHead() bool {
+    ns.mu.RLock()
+    defer ns.mu.RUnlock()
+    return ns.self != nil && ns.head != nil && ns.self.NodeId == ns.head.NodeId
+}
+
+// IsTail preveri ali je vozlisce rep
+func (ns *NodeState) IsTail() bool {
+    ns.mu.RLock()
+    defer ns.mu.RUnlock()
+    return ns.self != nil && ns.tail != nil && ns.self.NodeId == ns.tail.NodeId
 }
 
 // GetState vrne trenutni config state
@@ -58,7 +77,6 @@ func (s *DataNodeServer) UpdateChainConfig(ctx context.Context, cfg *pb.ChainCon
     cfg.Head,
     cfg.Tail,
     )
-
     return &emptypb.Empty{}, nil
 }
 

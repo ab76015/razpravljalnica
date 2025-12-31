@@ -48,12 +48,24 @@ message NodeInfo {
   string address = 2;
 }
 
+enum WriteRequestType {
+    WRT_User = 0
+    WRT_Topic = 1
+    WRT_PostMessage = 2
+    WRT_UpdateMessage = 3
+    WRT_DeleteMessage = 4
+    WRT_LikeMessage = 5
+}
+
+
 ////////////////////////////////////////////////////////////////////////////////
 // Data plane
 ////////////////////////////////////////////////////////////////////////////////
 service DataNode {
   // Control plane pushes updated chain config to data node
   rpc UpdateChainConfig(ChainConfig) returns (google.protobuf.Empty);
+  // Data plane replication write RPC
+  rpc ReplicateCreateUser(ReplicateWriteRequest) returns (google.protobuf.Empty); 
 }
 
 service  MessageBoard{
@@ -90,7 +102,6 @@ service  MessageBoard{
 
   // Subscribe to topics; goes to the node returned by head
   rpc SubscribeTopic(SubscribeTopicRequest) returns (stream MessageEvent);
-
 }
 
 message CreateUserRequest {
@@ -135,6 +146,7 @@ message GetMessagesRequest {
   int64 from_message_id = 2; // starting id of the message (0 from beggining)
   int32 limit = 3; // max number of messages
 }
+
 message GetMessagesResponse {
   repeated Message messages = 1;
 }

@@ -33,11 +33,21 @@ func main() {
     grpcServer := grpc.NewServer() //ustvari instanco grpc serverja
 
     storage := storage.NewMemStorage()
-    messageBoardSrv := server.NewMessageBoardServer(storage)
 
-    nodeState := replication.NewNodeState()
+    if *nodeID == "" {
+        log.Fatal("node_id must be provided")
+    }
+
+    self := &pb.NodeInfo{
+        NodeId:  *nodeID,
+        Address: listenAddr,
+    }
+    
+    nodeState := replication.NewNodeState(self)
+    
     replicationSrv := replication.NewDataNodeServer(nodeState)
-
+    messageBoardSrv := server.NewMessageBoardServer(storage)
+    
     // povezemo z nasimi implementacijami
     pb.RegisterMessageBoardServer(grpcServer, messageBoardSrv)
     pb.RegisterDataNodeServer(grpcServer, replicationSrv)
