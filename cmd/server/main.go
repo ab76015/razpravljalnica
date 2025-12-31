@@ -2,8 +2,8 @@ package main
 
 import (
     "flag"
-    "fmt"
     "log"
+    "fmt"
     "net"
     "context"
     "time"
@@ -69,7 +69,7 @@ func main() {
             log.Fatalf("Join call failed: %v", err)
         }
 
-        log.Printf("Joined chain with chain-version: %d, predecessor: %v, successor: %v",
+        log.Printf("[JOINED] chain with chain-version: %d predecessor: (%v) successor: (%v)\n",
             config.Version, config.Predecessor, config.Successor)
 
         // Update local node state from config as needed, e.g.:
@@ -77,7 +77,7 @@ func main() {
     }()
 
 
-    log.Printf("Data plane server listening on %s", listenAddr)
+    log.Printf("Data plane server listening on %s\n", listenAddr)
     if err := grpcServer.Serve(lis); err != nil {
         log.Fatalf("Failed to serve: %v", err)
     }

@@ -1,9 +1,9 @@
 package replication
 
 import (
+    "log"
     "context"
     "sync"
-
     pb "github.com/ab76015/razpravljalnica/api/pb"
     "google.golang.org/protobuf/types/known/emptypb"
 )
@@ -50,6 +50,15 @@ func NewDataNodeServer(state *NodeState) *DataNodeServer {
 // UpdateChainConfig RPC ki ga klice kontrolna ravnina ko zeli posodobiti stanje streznika na podatkovni ravnini
 func (s *DataNodeServer) UpdateChainConfig(ctx context.Context, cfg *pb.ChainConfig) (*emptypb.Empty, error) {
     s.state.UpdateConfig(cfg)
+    log.Printf(
+    "[CHAIN-UPDATE] version=%d pred=(%v) succ=(%v)\n head=(%v) tail=(%v)\n",
+    cfg.Version,
+    cfg.Predecessor,
+    cfg.Successor,
+    cfg.Head,
+    cfg.Tail,
+    )
+
     return &emptypb.Empty{}, nil
 }
 

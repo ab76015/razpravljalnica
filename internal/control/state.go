@@ -1,6 +1,7 @@
 package control
 
 import (
+    "log"
     "sync"
     pb "github.com/ab76015/razpravljalnica/api/pb"   
 )
@@ -49,6 +50,7 @@ func (cs *ChainState) AddNode(node *pb.NodeInfo) int {
 
     cs.nodes = append(cs.nodes, node)
     cs.version++
+    log.Printf("[STATE-UPDATE] added node_id=%s\n", node.NodeId)
     return len(cs.nodes) - 1
 }
 

@@ -50,11 +50,12 @@ func buildConfigForIndex(idx int, state *ChainState) *pb.ChainConfig {
 func (s *ControlServer) notifyAllNodes() {
     nodes, _ := s.state.NodesSnapshot()
 
+
     for idx, node := range nodes {
         go func(i int, n *pb.NodeInfo) {
             conn, err := grpc.Dial(n.Address, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(3*time.Second))
             if err != nil {
-                log.Printf("Failed to dial node %s at %s: %v", n.NodeId, n.Address, err)
+                log.Printf("Failed to dial node %s at %s: %v\n", n.NodeId, n.Address, err)
                 return
             }
             defer conn.Close()
@@ -69,9 +70,9 @@ func (s *ControlServer) notifyAllNodes() {
 
             _, err = client.UpdateChainConfig(ctx, cfg)
             if err != nil {
-                log.Printf("Failed to update config for node %s: %v", n.NodeId, err)
+                log.Printf("Failed to update config for node %s: %v\n", n.NodeId, err)
             } else {
-                log.Printf("Updated config sent to node %s", n.NodeId)
+                log.Printf("Updated config sent to node %s with addr %s\n", n.NodeId, n.Address)
             }
         }(idx, node)
     }
@@ -79,6 +80,7 @@ func (s *ControlServer) notifyAllNodes() {
 
 // Join klicejo vozlisca iz podatkovne ravnine ko se zelijo povezati
 func (s *ControlServer) Join(ctx context.Context, node *pb.NodeInfo) (*pb.ChainConfig, error) {
+    log.Printf("[JOIN] node_id=%s addr=%s\n", node.NodeId, node.Address)
     idx := s.state.AddNode(node)
     newConfig := buildConfigForIndex(idx, s.state)
 
