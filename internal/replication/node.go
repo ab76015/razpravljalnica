@@ -4,6 +4,7 @@ import (
     "log"
     "context"
     "sync"
+    "google.golang.org/grpc"
     pb "github.com/ab76015/razpravljalnica/api/pb"
     "google.golang.org/protobuf/types/known/emptypb"
 )
@@ -82,8 +83,16 @@ type DataNodeServer struct {
     state *NodeState
 }
 
+// NewDataNodeServer je konstruktor, ki sprejme NodeState in ustvari abstrakcijo streznika za verizno replikacijo
 func NewDataNodeServer(state *NodeState) *DataNodeServer {
     return &DataNodeServer{state: state}
+}
+
+// State vrne je getter za kazalec na stanje (NodeState) trenutnega DataNodeServer strežnika
+func (s *DataNodeServer) State() *NodeState {
+    s.state.mu.RLock()
+    defer s.state.mu.RUnlock()
+    return s.state
 }
 
 // UpdateChainConfig RPC ki ga klice kontrolna ravnina ko zeli posodobiti stanje streznika na podatkovni ravnini
@@ -98,6 +107,31 @@ func (s *DataNodeServer) UpdateChainConfig(ctx context.Context, cfg *pb.ChainCon
     cfg.Tail,
     )
     return &emptypb.Empty{}, nil
+}
+
+func (s *DataNodeServer) applyWrite(rw *pb.ReplicatedWrite) error {
+    switch rw.Op {
+
+    case "PostMessage":
+        var req pb.PostMessageRequest
+        if err := proto.Unmarshal(rw.Payload, &req); err != nil {
+            return err
+        }
+
+        return s.storage.PostMessage(&req)
+
+    case "CreateUser":
+        var req pb.CreateUserRequest
+        if err := proto.Unmarshal(rw.Payload, &req); err != nil {
+            return err
+        }
+
+        return s.storage.CreateUser(&req)
+    // itd.. ...TODO
+
+    default:
+        return fmt.Errorf("unknown op %s", rw.Op)
+    }
 }
 
 
@@ -117,9 +151,6 @@ func (s *DataNodeServer) ForwardWrite(rw *pb.ReplicatedWrite) error {
     client := pb.NewDataNodeClient(conn)
 
     _, err = client.ReplicateWrite(context.Background(), rw) 
-    if err == nil {
-        log.Printf("[WRITE-FWD] to %s", succ.Address)
-    }   
 
     return err 
 }
@@ -127,12 +158,8 @@ func (s *DataNodeServer) ForwardWrite(rw *pb.ReplicatedWrite) error {
 // sendAckBackward vzpostavi povezavo z pred in mu pošlje ack
 func (s *DataNodeServer) sendAckBackward(version uint64) error {
     pred := s.state.Predecessor()
-    if pred == nil {
-        // HEAD reached
-        log.Printf("[HEAD-ACK-RECEIVED] version=%d", version)
-        return nil 
-    }   
-
+    
+    // povezava s predhodnikom
     conn, err := grpc.Dial(pred.Address, grpc.WithInsecure())
     if err != nil {
         return err 
@@ -141,38 +168,36 @@ func (s *DataNodeServer) sendAckBackward(version uint64) error {
 
     client := pb.NewDataNodeClient(conn)
 
+    // repliciraj ack do predhodnika
     ack := &pb.ReplicatedAck{Version: version}
     _, err = client.ReplicateAck(context.Background(), ack)
-    if err == nil {
-        log.Printf("[ACK-FWD] to %s", pred.Address)
-    }   
 
     return err 
 }
 
 // ReplicateWrite je grpc metoda (glej proto), ki pošlje rw nasledniku 
 func (s *DataNodeServer) ReplicateWrite(ctx context.Context,req *pb.ReplicatedWrite,) (*emptypb.Empty, error) {
-    // 1. Apply locally (but do NOT ack yet)
-    // (call into storage via callback or channel later)
+    // 1. apliciraj lokalno
+    if err := s.applyWrite(rw); err != nil {
+        return nil, err
+    }
     
-    log.Printf("Prejel sporočilo od predhodnika.\n")
+    log.Printf("Prejel sporočilo od predhodnika in ga zapisal v lokalni storage.\n")
     if s.state.IsTail() {
         // Rep vrne ACK
+        log.Printf("Kot rep poslal ACK predhodniku.")
         s.sendAckBackward(req.Version)
         return &emptypb.Empty{}, nil
     }
+
     log.Printf("Poslal sporočilo naprej nasledniku.\n")
     // 2. Pošlji naslednjiku
-    s.forwardWrite(req)
+    s.ForwardWrite(req)
     return &emptypb.Empty{}, nil
 }
 
 // ReplicateAck je grpc metoda (glej proto), ki pošlje ra predhodniku
-func (s *DataNodeServer) ReplicateAck(
-    ctx context.Context,
-    req *pb.ReplicatedAck,
-) (*emptypb.Empty, error) {
-
+func (s *DataNodeServer) ReplicateAck(ctx context.Context, req *pb.ReplicatedAck,) (*emptypb.Empty, error) {
     if s.state.IsHead() {
         // ACK je prišel do glave
         // Sporoči čakajočemu klientu (TODO)
@@ -181,7 +206,13 @@ func (s *DataNodeServer) ReplicateAck(
     }
     log.Printf("Poslal ACK predhodniku.\n")
     // Forward ack backward
-    s.forwardAck(req)
+    s.sendAckBackward(req.Version)
     return &emptypb.Empty{}, nil
 }
+
+
+
+
+
+
 

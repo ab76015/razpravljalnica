@@ -46,7 +46,7 @@ func main() {
     nodeState := replication.NewNodeState(self)
     
     replicationSrv := replication.NewDataNodeServer(nodeState)
-    messageBoardSrv := server.NewMessageBoardServer(storage)
+    messageBoardSrv := server.NewMessageBoardServer(storage, replicationSrv)
     
     // povezemo z nasimi implementacijami
     pb.RegisterMessageBoardServer(grpcServer, messageBoardSrv)
@@ -82,8 +82,25 @@ func main() {
         log.Printf("[JOINED] chain with chain-version: %d predecessor: (%v) successor: (%v)\n",
             config.Version, config.Predecessor, config.Successor)
 
-        // Update local node state from config as needed, e.g.:
+        // Posodobi local node stanje preko config
         nodeState.UpdateConfig(config)
+    }()
+    // testiranje pisanja v verigi
+    go func() {
+        time.Sleep(5 * time.Second) // give chain time to stabilize
+
+        if nodeState.IsHead() {
+            log.Println("[TEST] initiating manual write from head")
+
+            req := &pb.ReplicatedWrite{
+                Version: nodeState.Version(),
+                Payload: []byte("hello-chain-replication"),
+            }
+
+            if err := replicationSrv.ForwardWrite(req); err != nil {
+                log.Printf("[TEST] write failed: %v", err)
+            }
+        }
     }()
 
 

@@ -21,6 +21,8 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	DataNode_UpdateChainConfig_FullMethodName = "/razpravljalnica.DataNode/UpdateChainConfig"
+	DataNode_ReplicateWrite_FullMethodName    = "/razpravljalnica.DataNode/ReplicateWrite"
+	DataNode_ReplicateAck_FullMethodName      = "/razpravljalnica.DataNode/ReplicateAck"
 )
 
 // DataNodeClient is the client API for DataNode service.
@@ -33,6 +35,9 @@ const (
 type DataNodeClient interface {
 	// Control plane pushes updated chain config to data node
 	UpdateChainConfig(ctx context.Context, in *ChainConfig, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// Data plane replication write RPC
+	ReplicateWrite(ctx context.Context, in *ReplicatedWrite, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	ReplicateAck(ctx context.Context, in *ReplicatedAck, opts ...grpc.CallOption) (*emptypb.Empty, error)
 }
 
 type dataNodeClient struct {
@@ -53,6 +58,26 @@ func (c *dataNodeClient) UpdateChainConfig(ctx context.Context, in *ChainConfig,
 	return out, nil
 }
 
+func (c *dataNodeClient) ReplicateWrite(ctx context.Context, in *ReplicatedWrite, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, DataNode_ReplicateWrite_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dataNodeClient) ReplicateAck(ctx context.Context, in *ReplicatedAck, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, DataNode_ReplicateAck_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DataNodeServer is the server API for DataNode service.
 // All implementations must embed UnimplementedDataNodeServer
 // for forward compatibility.
@@ -63,6 +88,9 @@ func (c *dataNodeClient) UpdateChainConfig(ctx context.Context, in *ChainConfig,
 type DataNodeServer interface {
 	// Control plane pushes updated chain config to data node
 	UpdateChainConfig(context.Context, *ChainConfig) (*emptypb.Empty, error)
+	// Data plane replication write RPC
+	ReplicateWrite(context.Context, *ReplicatedWrite) (*emptypb.Empty, error)
+	ReplicateAck(context.Context, *ReplicatedAck) (*emptypb.Empty, error)
 	mustEmbedUnimplementedDataNodeServer()
 }
 
@@ -75,6 +103,12 @@ type UnimplementedDataNodeServer struct{}
 
 func (UnimplementedDataNodeServer) UpdateChainConfig(context.Context, *ChainConfig) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateChainConfig not implemented")
+}
+func (UnimplementedDataNodeServer) ReplicateWrite(context.Context, *ReplicatedWrite) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReplicateWrite not implemented")
+}
+func (UnimplementedDataNodeServer) ReplicateAck(context.Context, *ReplicatedAck) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReplicateAck not implemented")
 }
 func (UnimplementedDataNodeServer) mustEmbedUnimplementedDataNodeServer() {}
 func (UnimplementedDataNodeServer) testEmbeddedByValue()                  {}
@@ -115,6 +149,42 @@ func _DataNode_UpdateChainConfig_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DataNode_ReplicateWrite_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReplicatedWrite)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DataNodeServer).ReplicateWrite(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DataNode_ReplicateWrite_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DataNodeServer).ReplicateWrite(ctx, req.(*ReplicatedWrite))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DataNode_ReplicateAck_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReplicatedAck)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DataNodeServer).ReplicateAck(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DataNode_ReplicateAck_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DataNodeServer).ReplicateAck(ctx, req.(*ReplicatedAck))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DataNode_ServiceDesc is the grpc.ServiceDesc for DataNode service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -125,6 +195,14 @@ var DataNode_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateChainConfig",
 			Handler:    _DataNode_UpdateChainConfig_Handler,
+		},
+		{
+			MethodName: "ReplicateWrite",
+			Handler:    _DataNode_ReplicateWrite_Handler,
+		},
+		{
+			MethodName: "ReplicateAck",
+			Handler:    _DataNode_ReplicateAck_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -5,6 +5,7 @@ import (
     "context"
     "google.golang.org/grpc/codes"
     "google.golang.org/grpc/status"
+    "google.golang.org/protobuf/proto"
     "google.golang.org/protobuf/types/known/emptypb"
     "google.golang.org/protobuf/types/known/timestamppb"
     pb "github.com/ab76015/razpravljalnica/api/pb"
@@ -21,8 +22,8 @@ type Server struct {
 func NewMessageBoardServer(s storage.Storage, r *replication.DataNodeServer) *Server {
     return &Server{storage: s, replication: r,}
 }
-//delete later
-var encodedRequest []byte = []byte("test-write")
+
+// Pravilo: Za pisalne metode se najprej replicira nato zapiše v storage! (Replication pipeline aplicira write tj. replication/node.go)
 
 // CreateUser je pisalna metoda, ki ustvari novega uporabnika
 func (s *Server) CreateUser(ctx context.Context, in *pb.CreateUserRequest) (*pb.User, error) {
@@ -77,19 +78,28 @@ func (s *Server) PostMessage(ctx context.Context, in *pb.PostMessageRequest) (*p
         fmt.Println("server.go: PostMessage() error: writes are only allowed on head node!")
         return nil, status.Errorf(codes.FailedPrecondition, "writes allowed only on head node")
     } 
-    message, err := s.storage.PostMessage(in.TopicId, in.UserId, in.Text)
+
+    data, err := proto.Marshal(in)
     if err != nil {
         return nil, err
     }
+
     // Zgradi sporočilo za replikacijo (glej proto replicatedwrite)
     rw := &pb.ReplicatedWrite{
         Version: ns.Version(),
-        Payload: encodedRequest,
+        Op: "PostMessage",
+        Payload: data,
     }
 
+
     // Repliciraj/pošlji nasledniku (v verigi)
-    s.replication.ForwardWrite(rw)
-    return &pb.Message{Id : message.ID, TopicId: message.TopicID, UserId: message.UserID, Text: message.Text, CreatedAt: timestamppb.New(message.CreatedAt), Likes: message.Likes}, nil
+    if err := s.replication.ForwardWrite(rw); err != nil {
+        return nil, err
+    }
+        
+    //return &pb.Message{Id : message.ID, TopicId: message.TopicID, UserId: message.UserID, Text: message.Text, CreatedAt: timestamppb.New(message.CreatedAt), Likes: message.Likes}, nil
+    //zaenkrat vrnemo optimistečen odgovor, ampak treba implementira wait za ack
+    return &pb.Message{}, nil
 }
 
 // UpdateMessage je pisalna metoda, ki posodobi obstoječe sporočilo
