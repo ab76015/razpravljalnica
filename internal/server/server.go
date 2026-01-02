@@ -15,16 +15,21 @@ import (
 type Server struct {
     pb.UnimplementedMessageBoardServer
     storage storage.Storage
-    nodeState *replication.NodeState
+    replication *replication.DataNodeServer
 }
 
-func NewMessageBoardServer(s storage.Storage, ns *replication.NodeState) *Server {
-    return &Server{storage: s, nodeState: ns,}
+func NewMessageBoardServer(s storage.Storage, r *replication.DataNodeServer) *Server {
+    return &Server{storage: s, replication: r,}
 }
+//delete later
+var encodedRequest []byte = []byte("test-write")
 
 // CreateUser je pisalna metoda, ki ustvari novega uporabnika
 func (s *Server) CreateUser(ctx context.Context, in *pb.CreateUserRequest) (*pb.User, error) {
-    if !s.nodeState.IsHead() {
+    // v ns shrani nodestate oz. stanje ki ga dobiš preko getterja State(), 
+    // ta je definiran v replication/node.go za DataNodeServer
+    ns := s.replication.State()
+    if !ns.IsHead() {
         fmt.Println("server.go: CreateUser() error: writes are only allowed on head node!")
         return nil, status.Errorf(codes.FailedPrecondition, "writes allowed only on head node")
     }
@@ -32,14 +37,21 @@ func (s *Server) CreateUser(ctx context.Context, in *pb.CreateUserRequest) (*pb.
     if err != nil {
         return nil, err
     }
+    // Zgradi sporočilo za replikacijo (glej proto replicatedwrite)
+    rw := &pb.ReplicatedWrite{
+        Version: ns.Version(),
+        Payload: encodedRequest,
+    }
 
-    // TODO: forward to successor
+    // Repliciraj/pošlji nasledniku (v verigi)
+    s.replication.ForwardWrite(rw)
     return &pb.User{Id: user.ID, Name: user.Name}, nil
 }
 
 // CreateTopic je pisalna metoda, ki ustvari novo temo
 func (s *Server) CreateTopic(ctx context.Context, in *pb.CreateTopicRequest) (*pb.Topic, error) {
-    if !s.nodeState.IsHead() {
+    ns := s.replication.State()
+    if !ns.IsHead() {
         fmt.Println("server.go: CreateTopic() error: writes are only allowed on head node!")
         return nil, status.Errorf(codes.FailedPrecondition, "writes allowed only on head node")
     } 
@@ -47,13 +59,21 @@ func (s *Server) CreateTopic(ctx context.Context, in *pb.CreateTopicRequest) (*p
     if err != nil {
         return nil, err
     }
-    // TODO: forward to successor
+    // Zgradi sporočilo za replikacijo (glej proto replicatedwrite)
+    rw := &pb.ReplicatedWrite{
+        Version: ns.Version(),
+        Payload: encodedRequest,
+    }   
+
+    // Repliciraj/pošlji nasledniku (v verigi)
+    s.replication.ForwardWrite(rw)
     return &pb.Topic{Id: topic.ID, Name: topic.Name }, nil
 }
 
 // PostMessage je pisalna metoda, ki ustvari novo sporočilo
 func (s *Server) PostMessage(ctx context.Context, in *pb.PostMessageRequest) (*pb.Message, error) {
-    if !s.nodeState.IsHead() {
+    ns := s.replication.State()
+    if !ns.IsHead() {
         fmt.Println("server.go: PostMessage() error: writes are only allowed on head node!")
         return nil, status.Errorf(codes.FailedPrecondition, "writes allowed only on head node")
     } 
@@ -61,12 +81,21 @@ func (s *Server) PostMessage(ctx context.Context, in *pb.PostMessageRequest) (*p
     if err != nil {
         return nil, err
     }
+    // Zgradi sporočilo za replikacijo (glej proto replicatedwrite)
+    rw := &pb.ReplicatedWrite{
+        Version: ns.Version(),
+        Payload: encodedRequest,
+    }
+
+    // Repliciraj/pošlji nasledniku (v verigi)
+    s.replication.ForwardWrite(rw)
     return &pb.Message{Id : message.ID, TopicId: message.TopicID, UserId: message.UserID, Text: message.Text, CreatedAt: timestamppb.New(message.CreatedAt), Likes: message.Likes}, nil
 }
 
 // UpdateMessage je pisalna metoda, ki posodobi obstoječe sporočilo
 func (s *Server) UpdateMessage(ctx context.Context, in *pb.UpdateMessageRequest) (*pb.Message, error) {
-    if !s.nodeState.IsHead() {
+    ns := s.replication.State()
+    if !ns.IsHead() {
         fmt.Println("server.go: UpdateMessage() error: writes are only allowed on head node!")
         return nil, status.Errorf(codes.FailedPrecondition, "writes allowed only on head node")
     } 
@@ -74,12 +103,21 @@ func (s *Server) UpdateMessage(ctx context.Context, in *pb.UpdateMessageRequest)
     if err != nil {
         return nil, err
     }
+    // Zgradi sporočilo za replikacijo (glej proto replicatedwrite)
+    rw := &pb.ReplicatedWrite{
+        Version: ns.Version(),
+        Payload: encodedRequest,
+    }
+
+    // Repliciraj/pošlji nasledniku (v verigi)
+    s.replication.ForwardWrite(rw)
     return &pb.Message{Id : message.ID, TopicId: message.TopicID, UserId: message.UserID, Text: message.Text, CreatedAt: timestamppb.New(message.CreatedAt), Likes: message.Likes}, nil
 }
 
 // DeleteMessage je pisalna metoda, ki izbrise obstoječe sporočilo
 func (s *Server) DeleteMessage(ctx context.Context, in *pb.DeleteMessageRequest) (*emptypb.Empty, error) {
-    if !s.nodeState.IsHead() {
+    ns := s.replication.State()
+    if !ns.IsHead() {
         fmt.Println("server.go: DeleteMessage() error: writes are only allowed on head node!")
         return nil, status.Errorf(codes.FailedPrecondition, "writes allowed only on head node")
     } 
@@ -87,12 +125,21 @@ func (s *Server) DeleteMessage(ctx context.Context, in *pb.DeleteMessageRequest)
     if err != nil {
         return nil, err
     }
+    // Zgradi sporočilo za replikacijo (glej proto replicatedwrite)
+    rw := &pb.ReplicatedWrite{
+        Version: ns.Version(),
+        Payload: encodedRequest,
+    }
+
+    // Repliciraj/pošlji nasledniku (v verigi)
+    s.replication.ForwardWrite(rw)
     return &emptypb.Empty{}, nil
 }
 
 // LikeMessage je pisalna metoda, ki vsečka sporočilo
 func (s *Server) LikeMessage(ctx context.Context, in *pb.LikeMessageRequest) (*pb.Message, error) {
-    if !s.nodeState.IsHead() {
+    ns := s.replication.State()
+    if !ns.IsHead() {
         fmt.Println("server.go: LikeMessage() error: writes are only allowed on head node!")
         return nil, status.Errorf(codes.FailedPrecondition, "writes allowed only on head node")
     } 
@@ -100,6 +147,14 @@ func (s *Server) LikeMessage(ctx context.Context, in *pb.LikeMessageRequest) (*p
     if err != nil {
         return nil, err
     }
+    // Zgradi sporočilo za replikacijo (glej proto replicatedwrite)
+    rw := &pb.ReplicatedWrite{
+        Version: ns.Version(),
+        Payload: encodedRequest,
+    }
+
+    // Repliciraj/pošlji nasledniku (v verigi)
+    s.replication.ForwardWrite(rw)
     return &pb.Message{Id : message.ID, TopicId: message.TopicID, UserId: message.UserID, Text: message.Text, CreatedAt: timestamppb.New(message.CreatedAt), Likes: message.Likes}, nil
 }
 
@@ -127,3 +182,4 @@ func (s *Server) GetMessages(ctx context.Context,in *pb.GetMessagesRequest) (*pb
     }
     return response, nil
 }
+
