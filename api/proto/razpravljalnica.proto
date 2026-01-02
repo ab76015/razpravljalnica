@@ -45,8 +45,7 @@ enum OpType {
 
 message NodeInfo {
   string node_id = 1;
-  string op = 2; // npr. "PostMessage"
-  string address = 3;
+  string address = 2;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -62,7 +61,8 @@ service DataNode {
 
 message ReplicatedWrite {
   uint64 version = 1;
-  bytes  payload = 2;   // opaque write (we decide format later)
+  string op = 2; // npr. "PostMessage"
+  bytes  payload = 3;   // marshalled protobuff request, tj. struct se pretvori v byte in pošlje
 }
 
 message ReplicatedAck {
