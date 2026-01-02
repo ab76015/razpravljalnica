@@ -56,6 +56,26 @@ func (ns *NodeState) GetState() (pred, succ *pb.NodeInfo, version uint64) {
     return ns.predecessor, ns.successor, ns.version
 }
 
+// Successor vrne naslednika vozlišča
+func (ns *NodeState) Successor() *pb.NodeInfo {
+    ns.mu.RLock()
+    defer ns.mu.RUnlock()
+    return ns.successor
+}
+
+// Predecessor vrne predhodnika vozlišča
+func (ns *NodeState) Predecessor() *pb.NodeInfo {
+    ns.mu.RLock()
+    defer ns.mu.RUnlock()
+    return ns.predecessor
+}
+
+// Version vrne verzijo vozlišča
+func (ns *NodeState) Version() uint64 {
+    ns.mu.RLock()
+    defer ns.mu.RUnlock()
+    return ns.version
+}
 // DataNodeServer implementira data node gRPC server interface (iz proto)
 type DataNodeServer struct {
     pb.UnimplementedDataNodeServer
@@ -77,6 +97,91 @@ func (s *DataNodeServer) UpdateChainConfig(ctx context.Context, cfg *pb.ChainCon
     cfg.Head,
     cfg.Tail,
     )
+    return &emptypb.Empty{}, nil
+}
+
+
+// ForwardWrite vzpostavi povezavo z succ in mu pošlje rw
+func (s *DataNodeServer) ForwardWrite(rw *pb.ReplicatedWrite) error {
+    succ := s.state.Successor()
+    if succ == nil {
+        return nil // tail, nothing to forward
+    }   
+
+    conn, err := grpc.Dial(succ.Address, grpc.WithInsecure())
+    if err != nil {
+        return err 
+    }   
+    defer conn.Close()
+
+    client := pb.NewDataNodeClient(conn)
+
+    _, err = client.ReplicateWrite(context.Background(), rw) 
+    if err == nil {
+        log.Printf("[WRITE-FWD] to %s", succ.Address)
+    }   
+
+    return err 
+}
+
+// sendAckBackward vzpostavi povezavo z pred in mu pošlje ack
+func (s *DataNodeServer) sendAckBackward(version uint64) error {
+    pred := s.state.Predecessor()
+    if pred == nil {
+        // HEAD reached
+        log.Printf("[HEAD-ACK-RECEIVED] version=%d", version)
+        return nil 
+    }   
+
+    conn, err := grpc.Dial(pred.Address, grpc.WithInsecure())
+    if err != nil {
+        return err 
+    }   
+    defer conn.Close()
+
+    client := pb.NewDataNodeClient(conn)
+
+    ack := &pb.ReplicatedAck{Version: version}
+    _, err = client.ReplicateAck(context.Background(), ack)
+    if err == nil {
+        log.Printf("[ACK-FWD] to %s", pred.Address)
+    }   
+
+    return err 
+}
+
+// ReplicateWrite je grpc metoda (glej proto), ki pošlje rw nasledniku 
+func (s *DataNodeServer) ReplicateWrite(ctx context.Context,req *pb.ReplicatedWrite,) (*emptypb.Empty, error) {
+    // 1. Apply locally (but do NOT ack yet)
+    // (call into storage via callback or channel later)
+    
+    log.Printf("Prejel sporočilo od predhodnika.\n")
+    if s.state.IsTail() {
+        // Rep vrne ACK
+        s.sendAckBackward(req.Version)
+        return &emptypb.Empty{}, nil
+    }
+    log.Printf("Poslal sporočilo naprej nasledniku.\n")
+    // 2. Pošlji naslednjiku
+    s.forwardWrite(req)
+    return &emptypb.Empty{}, nil
+}
+
+// ReplicateAck je grpc metoda (glej proto), ki pošlje ra predhodniku
+func (s *DataNodeServer) ReplicateAck(
+    ctx context.Context,
+    req *pb.ReplicatedAck,
+) (*emptypb.Empty, error) {
+
+    if s.state.IsHead() {
+        // ACK je prišel do glave
+        // Sporoči čakajočemu klientu (TODO)
+        log.Printf("Kot glava sprejel zadnji ACK.\n")
+        return &emptypb.Empty{}, nil
+    }
+    log.Printf("Poslal ACK predhodniku.\n")
+    // Forward ack backward
+    s.forwardAck(req)
     return &emptypb.Empty{}, nil
 }
 
