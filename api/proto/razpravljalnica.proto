@@ -46,7 +46,7 @@ enum OpType {
 message NodeInfo {
   string node_id = 1;
   string op = 2; // npr. "PostMessage"
-  string address = 2;
+  string address = 3;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
