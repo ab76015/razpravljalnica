@@ -45,18 +45,9 @@ enum OpType {
 
 message NodeInfo {
   string node_id = 1;
+  string op = 2; // npr. "PostMessage"
   string address = 2;
 }
-
-enum WriteRequestType {
-    WRT_User = 0
-    WRT_Topic = 1
-    WRT_PostMessage = 2
-    WRT_UpdateMessage = 3
-    WRT_DeleteMessage = 4
-    WRT_LikeMessage = 5
-}
-
 
 ////////////////////////////////////////////////////////////////////////////////
 // Data plane
@@ -65,7 +56,17 @@ service DataNode {
   // Control plane pushes updated chain config to data node
   rpc UpdateChainConfig(ChainConfig) returns (google.protobuf.Empty);
   // Data plane replication write RPC
-  rpc ReplicateCreateUser(ReplicateWriteRequest) returns (google.protobuf.Empty); 
+  rpc ReplicateWrite(ReplicatedWrite) returns (google.protobuf.Empty);
+  rpc ReplicateAck(ReplicatedAck) returns (google.protobuf.Empty);
+}
+
+message ReplicatedWrite {
+  uint64 version = 1;
+  bytes  payload = 2;   // opaque write (we decide format later)
+}
+
+message ReplicatedAck {
+  uint64 version = 1;
 }
 
 service  MessageBoard{
