@@ -111,11 +111,19 @@ func (s *Server) PostMessage(ctx context.Context, in *pb.PostMessageRequest) (*p
 		return nil, err
 	}
 
+	version := ns.NextVersion()
 	// Zgradi sporočilo za replikacijo (glej proto replicatedwrite)
 	rw := &pb.ReplicatedWrite{
-		Version: ns.Version(),
+		Version: version,
 		Op:      "PostMessage",
 		Payload: data,
+	}
+
+	// Registriraj čakajoči ACK
+	chanACK := s.replication.RegisterPendingACK(version)
+
+	if err := s.replication.ApplyWrite(rw); err != nil {
+		return nil, err
 	}
 
 	// Repliciraj/pošlji nasledniku (v verigi)
@@ -123,12 +131,20 @@ func (s *Server) PostMessage(ctx context.Context, in *pb.PostMessageRequest) (*p
 		return nil, err
 	}
 
+	select {
+	case <-chanACK:
+		// ACK prejet
+	case <-ctx.Done():
+		s.replication.CancelPendingACK(version)
+		return nil, status.Errorf(codes.DeadlineExceeded, "PostMessage not acknowledged in time")
+	}
+
 	// message, err := s.storage.PostMessage(in.TopicId, in.UserId, in.Text)
 	// if err != nil {
 	// 	return nil, err
 	// }
 
-	//return &pb.Message{Id : message.ID, TopicId: message.TopicID, UserId: message.UserID, Text: message.Text, CreatedAt: timestamppb.New(message.CreatedAt), Likes: message.Likes}, nil
+	//return &pb.Message{Id: message.ID, TopicId: message.TopicID, UserId: message.UserID, Text: message.Text, CreatedAt: timestamppb.New(message.CreatedAt), Likes: message.Likes}, nil
 	//zaenkrat vrnemo optimistečen odgovor, ampak treba implementira wait za ack
 	return &pb.Message{}, nil
 }

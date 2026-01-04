@@ -91,7 +91,7 @@ type DataNodeServer struct {
 
 // NewDataNodeServer je konstruktor, ki sprejme NodeState in ustvari abstrakcijo streznika za verizno replikacijo
 func NewDataNodeServer(state *NodeState) *DataNodeServer {
-	return &DataNodeServer{state: state}
+	return &DataNodeServer{state: state, pending: make(map[uint64]chan struct{})}
 }
 
 // State vrne je getter za kazalec na stanje (NodeState) trenutnega DataNodeServer strežnika
@@ -113,6 +113,10 @@ func (s *DataNodeServer) UpdateChainConfig(ctx context.Context, cfg *pb.ChainCon
 		cfg.Tail,
 	)
 	return &emptypb.Empty{}, nil
+}
+
+func (s *DataNodeServer) ApplyWrite(rw *pb.ReplicatedWrite) error {
+	return s.applyWrite(rw)
 }
 
 func (s *DataNodeServer) applyWrite(rw *pb.ReplicatedWrite) error {
@@ -161,7 +165,6 @@ func (s *DataNodeServer) applyWrite(rw *pb.ReplicatedWrite) error {
 			return err
 		}
 		return s.storage.LikeMessage(&req)
-	// itd.. ...TODO
 
 	default:
 		return fmt.Errorf("unknown op %s", rw.Op)
@@ -247,4 +250,30 @@ func (s *DataNodeServer) ReplicateAck(ctx context.Context, req *pb.ReplicatedAck
 	// Forward ack backward
 	s.sendAckBackward(req.Version)
 	return &emptypb.Empty{}, nil
+}
+
+// Registrira čakajoči ACK
+func (s *DataNodeServer) RegisterPendingACK(version uint64) chan struct{} {
+	ch := make(chan struct{})
+	s.mu.Lock()
+	s.pending[version] = ch
+	s.mu.Unlock()
+	return ch
+}
+
+// Zbriše čakajoči ACK
+func (s *DataNodeServer) CancelPendingACK(version uint64) {
+	s.mu.Lock()
+	if ch, ok := s.pending[version]; ok {
+		close(ch)
+		delete(s.pending, version)
+	}
+	s.mu.Unlock()
+}
+
+func (ns *NodeState) NextVersion() uint64 {
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+	ns.version++
+	return ns.version
 }
