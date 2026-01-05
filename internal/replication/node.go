@@ -7,7 +7,8 @@ import (
 	"sync"
 
 	pb "github.com/ab76015/razpravljalnica/api/pb"
-	"google.golang.org/grpc"
+	"github.com/ab76015/razpravljalnica/internal/storage"
+    "google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
@@ -85,19 +86,18 @@ func (ns *NodeState) Version() uint64 {
 type DataNodeServer struct {
 	pb.UnimplementedDataNodeServer
 	state   *NodeState
+    storage storage.Storage
 	pending map[uint64]chan struct{}
 	mu      sync.Mutex
 }
 
 // NewDataNodeServer je konstruktor, ki sprejme NodeState in ustvari abstrakcijo streznika za verizno replikacijo
-func NewDataNodeServer(state *NodeState) *DataNodeServer {
-	return &DataNodeServer{state: state, pending: make(map[uint64]chan struct{})}
+func NewDataNodeServer(state *NodeState, st storage.Storage) *DataNodeServer {
+	return &DataNodeServer{state: state, storage: st, pending: make(map[uint64]chan struct{})}
 }
 
 // State vrne je getter za kazalec na stanje (NodeState) trenutnega DataNodeServer strežnika
 func (s *DataNodeServer) State() *NodeState {
-	s.state.mu.RLock()
-	defer s.state.mu.RUnlock()
 	return s.state
 }
 
@@ -115,6 +115,7 @@ func (s *DataNodeServer) UpdateChainConfig(ctx context.Context, cfg *pb.ChainCon
 	return &emptypb.Empty{}, nil
 }
 
+
 func (s *DataNodeServer) ApplyWrite(rw *pb.ReplicatedWrite) error {
 	return s.applyWrite(rw)
 }
@@ -128,7 +129,12 @@ func (s *DataNodeServer) applyWrite(rw *pb.ReplicatedWrite) error {
 			return err
 		}
 
-		return s.storage.PostMessage(&req)
+        _, err := s.storage.PostMessage(
+            req.TopicId,
+            req.UserId,
+            req.Text,
+        )
+        return err
 
 	case "CreateUser":
 		var req pb.CreateUserRequest
@@ -136,40 +142,71 @@ func (s *DataNodeServer) applyWrite(rw *pb.ReplicatedWrite) error {
 			return err
 		}
 
-		return s.storage.CreateUser(&req)
+        _, err := s.storage.CreateUser(req.Name)
+        return err
 
 	case "CreateTopic":
 		var req pb.CreateTopicRequest
 		if err := proto.Unmarshal(rw.Payload, &req); err != nil {
 			return err
 		}
-		return s.storage.CreateTopic(&req)
+        
+        _, err := s.storage.CreateTopic(
+            req.Name,
+        )
+        return err
 
 	case "UpdateMessage":
 		var req pb.UpdateMessageRequest
 		if err := proto.Unmarshal(rw.Payload, &req); err != nil {
 			return err
 		}
-		return s.storage.UpdateMessage(&req)
+        
+        _, err := s.storage.UpdateMessage(
+            req.TopicId,
+            req.MessageId,
+            req.UserId,
+            req.Text,
+        )
+        return err
 
 	case "DeleteMessage":
 		var req pb.DeleteMessageRequest
 		if err := proto.Unmarshal(rw.Payload, &req); err != nil {
 			return err
 		}
-		return s.storage.DeleteMessage(&req)
+        return s.storage.DeleteMessage(
+            req.TopicId,
+            req.MessageId,
+            req.UserId,
+        )
 
 	case "LikeMessage":
 		var req pb.LikeMessageRequest
 		if err := proto.Unmarshal(rw.Payload, &req); err != nil {
 			return err
 		}
-		return s.storage.LikeMessage(&req)
+        _, err := s.storage.LikeMessage(
+            req.TopicId,
+            req.MessageId,
+            req.UserId,
+        )
+        return err
 
 	default:
 		return fmt.Errorf("unknown op %s", rw.Op)
 	}
 }
+
+
+// ReplicateFromHead LOCAL APPLY + FORWARD mora biti ena operacija
+func (s *DataNodeServer) ReplicateFromHead(rw *pb.ReplicatedWrite) error {
+    if err := s.applyWrite(rw); err != nil {
+        return err
+    }
+    return s.ForwardWrite(rw)
+}
+
 
 // ForwardWrite vzpostavi povezavo z succ in mu pošlje rw
 func (s *DataNodeServer) ForwardWrite(rw *pb.ReplicatedWrite) error {
@@ -194,6 +231,10 @@ func (s *DataNodeServer) ForwardWrite(rw *pb.ReplicatedWrite) error {
 // sendAckBackward vzpostavi povezavo z pred in mu pošlje ack
 func (s *DataNodeServer) sendAckBackward(version uint64) error {
 	pred := s.state.Predecessor()
+
+    if pred == nil {
+        return nil
+    }
 
 	// povezava s predhodnikom
 	conn, err := grpc.Dial(pred.Address, grpc.WithInsecure())

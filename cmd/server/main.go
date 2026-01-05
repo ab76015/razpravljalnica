@@ -5,9 +5,9 @@ import (
     "log"
     "fmt"
     "net"
-    "context"
     "time"
     "google.golang.org/grpc"
+   "google.golang.org/protobuf/proto"
     pb "github.com/ab76015/razpravljalnica/api/pb"
     "github.com/ab76015/razpravljalnica/internal/storage"
     "github.com/ab76015/razpravljalnica/internal/replication"
@@ -45,7 +45,7 @@ func main() {
     
     nodeState := replication.NewNodeState(self)
     
-    replicationSrv := replication.NewDataNodeServer(nodeState)
+    replicationSrv := replication.NewDataNodeServer(nodeState, storage)
     messageBoardSrv := server.NewMessageBoardServer(storage, replicationSrv)
     
     // povezemo z nasimi implementacijami
@@ -53,53 +53,60 @@ func main() {
     pb.RegisterDataNodeServer(grpcServer, replicationSrv)
 
     // poklicemo join() na control server da registriramo node na kontrolni ravnini
-    go func() {
-        ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-        defer cancel()
-
-        conn, err := grpc.Dial(*controlAddress, grpc.WithInsecure())
-        if err != nil {
-            log.Fatalf("Failed to connect to control server at %s: %v", *controlAddress, err)
-        }
-        defer conn.Close()
-
-        controlClient := pb.NewControlPlaneClient(conn)
-
-        if *nodeID == "" {
-            log.Fatal("node_id flag is required")
-        }
-
-        nodeInfo := &pb.NodeInfo{
-            NodeId:  *nodeID,
-            Address: listenAddr,
-        }
-
-        config, err := controlClient.Join(ctx, nodeInfo)
-        if err != nil {
-            log.Fatalf("Join call failed: %v", err)
-        }
-
-        log.Printf("[JOINED] chain with chain-version: %d predecessor: (%v) successor: (%v)\n",
-            config.Version, config.Predecessor, config.Successor)
-
-        // Posodobi local node stanje preko config
-        nodeState.UpdateConfig(config)
-    }()
-    // testiranje pisanja v verigi
+    // testiranje pisanja v verigi (ONLY FOR TESTING)
     go func() {
         time.Sleep(5 * time.Second) // give chain time to stabilize
 
-        if nodeState.IsHead() {
-            log.Println("[TEST] initiating manual write from head")
+        if !nodeState.IsHead() {
+            return
+        }
 
-            req := &pb.ReplicatedWrite{
-                Version: nodeState.Version(),
-                Payload: []byte("hello-chain-replication"),
-            }
+        log.Println("[TEST] initiating manual write from head")
 
-            if err := replicationSrv.ForwardWrite(req); err != nil {
-                log.Printf("[TEST] write failed: %v", err)
-            }
+        // 1. pripravimo pravi protobuf request
+        postReq := &pb.PostMessageRequest{
+            TopicId:  1,
+            UserId:   1,
+            Text:     "hello chain replication",
+        }
+
+        payload, err := proto.Marshal(postReq)
+        if err != nil {
+            log.Printf("[TEST] marshal failed: %v", err)
+            return
+        }
+
+        // 2. nova verzija zapisa
+        version := nodeState.NextVersion()
+
+        rw := &pb.ReplicatedWrite{
+            Version: version,
+            Op:      "PostMessage",
+            Payload: payload,
+        }
+
+        // 3. registriramo ACK čakanje
+        ackCh := replicationSrv.RegisterPendingACK(version)
+        defer replicationSrv.CancelPendingACK(version)
+
+        // 4. lokalni apply (head mora tudi pisati!)
+        if err := replicationSrv.ApplyWrite(rw); err != nil {
+            log.Printf("[TEST] local apply failed: %v", err)
+            return
+        }
+
+        // 5. pošlji nasledniku
+        if err := replicationSrv.ForwardWrite(rw); err != nil {
+            log.Printf("[TEST] forward failed: %v", err)
+            return
+        }
+
+        // 6. čakaj na ACK iz repa
+        select {
+        case <-ackCh:
+            log.Printf("[TEST] write version=%d committed", version)
+        case <-time.After(5 * time.Second):
+            log.Printf("[TEST] ACK timeout for version=%d", version)
         }
     }()
 
