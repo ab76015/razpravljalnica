@@ -21,7 +21,8 @@ type NodeState struct {
 	self        *pb.NodeInfo
 	head        *pb.NodeInfo
 	tail        *pb.NodeInfo
-	version     uint64
+	chainVersion     uint64
+    writeVersion     uint64
 }
 
 // NewNodeState ustvari zacetno prazno stanje
@@ -37,7 +38,7 @@ func (ns *NodeState) UpdateConfig(cfg *pb.ChainConfig) {
 	ns.successor = cfg.Successor
 	ns.head = cfg.Head
 	ns.tail = cfg.Tail
-	ns.version = cfg.Version
+	ns.chainVersion = cfg.Version
 }
 
 // IsHead preveri ali je vozlisce glava
@@ -58,7 +59,7 @@ func (ns *NodeState) IsTail() bool {
 func (ns *NodeState) GetState() (pred, succ *pb.NodeInfo, version uint64) {
 	ns.mu.RLock()
 	defer ns.mu.RUnlock()
-	return ns.predecessor, ns.successor, ns.version
+	return ns.predecessor, ns.successor, ns.chainVersion
 }
 
 // Successor vrne naslednika vozlišča
@@ -75,11 +76,11 @@ func (ns *NodeState) Predecessor() *pb.NodeInfo {
 	return ns.predecessor
 }
 
-// Version vrne verzijo vozlišča
-func (ns *NodeState) Version() uint64 {
+// Version vrne chainVerzijo vozlišča
+func (ns *NodeState) chainVersion() uint64 {
 	ns.mu.RLock()
 	defer ns.mu.RUnlock()
-	return ns.version
+	return ns.chainVersion
 }
 
 // DataNodeServer implementira data node gRPC server interface (iz proto)
@@ -289,7 +290,9 @@ func (s *DataNodeServer) ReplicateAck(ctx context.Context, req *pb.ReplicatedAck
 	}
 	log.Printf("Poslal ACK predhodniku.\n")
 	// Forward ack backward
-	s.sendAckBackward(req.Version)
+    if err := s.sendAckBackward(req.Version); err != nil {
+        log.Printf("ACK forward failed: %v", err)
+    }
 	return &emptypb.Empty{}, nil
 }
 
@@ -312,6 +315,6 @@ func (s *DataNodeServer) CancelPendingACK(version uint64) {
 func (ns *NodeState) NextVersion() uint64 {
 	ns.mu.Lock()
 	defer ns.mu.Unlock()
-	ns.version++
-	return ns.version
+	ns.writeVersion++
+	return ns.writeVersion
 }
