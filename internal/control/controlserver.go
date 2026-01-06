@@ -24,7 +24,7 @@ func buildConfigForIndex(idx int, state *ChainState) *pb.ChainConfig {
     
     //ce je veriga še prazna
     if len(nodes) == 0 {
-        return &pb.ChainConfig{Version: version}
+        return &pb.ChainConfig{ChainVersion: version}
     }
 
     var pred, succ *pb.NodeInfo
@@ -37,7 +37,7 @@ func buildConfigForIndex(idx int, state *ChainState) *pb.ChainConfig {
     }
 
     return &pb.ChainConfig{
-        Version:     version,
+        ChainVersion:     version,
         Head:        nodes[0],
         Tail:        nodes[len(nodes)-1],
         Predecessor: pred,
@@ -95,7 +95,7 @@ func (s *ControlServer) GetClusterState(ctx context.Context, _ *emptypb.Empty) (
     head, tail, version := s.state.Snapshot()
 
     return &pb.ChainConfig{
-        Version: version,
+        ChainVersion: version,
         Head:  head,
         Tail:  tail,
     }, nil

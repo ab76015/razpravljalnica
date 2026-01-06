@@ -60,13 +60,13 @@ service DataNode {
 }
 
 message ReplicatedWrite {
-  uint64 version = 1;
+  uint64 write_id = 1;
   string op = 2; // npr. "PostMessage"
   bytes  payload = 3;   // marshalled protobuff request, tj. struct se pretvori v byte in pošlje
 }
 
 message ReplicatedAck {
-  uint64 version = 1;
+  uint64 write_id = 1;
 }
 
 service  MessageBoard{
@@ -187,7 +187,7 @@ service ControlPlane {
 }
 
 message ChainConfig {
-  uint64 version = 1;
+  uint64 chain_version = 1;
   NodeInfo head = 2;
   NodeInfo tail = 3;
   NodeInfo predecessor = 4;

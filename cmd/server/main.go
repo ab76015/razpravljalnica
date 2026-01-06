@@ -91,17 +91,17 @@ func main() {
         }
 
         // 2. Allocate version
-        version := nodeState.NextVersion()
+        writeID := nodeState.NextWriteID()
 
         rw := &pb.ReplicatedWrite{
-            Version: version,
+            WriteId: writeID,
             Op:      "CreateTopic",
             Payload: payload,
         }
 
         // 3. Register ACK wait
-        ackCh := replicationSrv.RegisterPendingACK(version)
-        defer replicationSrv.CancelPendingACK(version)
+        ackCh := replicationSrv.RegisterPendingACK(writeID)
+        defer replicationSrv.CancelPendingACK(writeID)
 
         // 4. Replicate from head (LOCAL APPLY + FORWARD)
         if err := replicationSrv.ReplicateFromHead(rw); err != nil {
@@ -112,9 +112,9 @@ func main() {
         // 5. Wait for ACK from tail
         select {
         case <-ackCh:
-            log.Printf("[TEST] SUCCESS: version=%d fully replicated & committed", version)
+            log.Printf("[TEST] SUCCESS: version=%d fully replicated & committed", writeID)
         case <-time.After(5 * time.Second):
-            log.Printf("[TEST] FAILURE: ACK timeout for version=%d", version)
+            log.Printf("[TEST] FAILURE: ACK timeout for version=%d", writeID)
         }
     }()
 

@@ -37,19 +37,19 @@ func (s *Server) CreateUser(ctx context.Context, in *pb.CreateUserRequest) (*pb.
 	}
 
 	// Zgradi sporočilo za replikacijo (glej proto replicatedwrite)
-    version := ns.NextVersion()
+    writeID := ns.NextWriteID()
     rw := &pb.ReplicatedWrite{
-		Version: version,
+		WriteId: writeID,
 		Op:      "CreateUser",
 		Payload: data,
 	}
 
 	// Registriraj čakajoči ACK
-	chanACK := s.replication.RegisterPendingACK(version)
+	chanACK := s.replication.RegisterPendingACK(writeID)
 	
     // Repliciraj/pošlji nasledniku (v verigi)
     if err := s.replication.ReplicateFromHead(rw); err != nil {
-        s.replication.CancelPendingACK(version)
+        s.replication.CancelPendingACK(writeID)
         return nil, err
     }
 	
@@ -58,7 +58,7 @@ func (s *Server) CreateUser(ctx context.Context, in *pb.CreateUserRequest) (*pb.
             // ACK prejet
             return &pb.User{}, nil
         case <-ctx.Done():
-            s.replication.CancelPendingACK(version)
+            s.replication.CancelPendingACK(writeID)
             return nil, status.Errorf(codes.DeadlineExceeded, "PostMessage not acknowledged in time")
 	}
 }
@@ -76,20 +76,20 @@ func (s *Server) CreateTopic(ctx context.Context, in *pb.CreateTopicRequest) (*p
 	}
 
 	// Zgradi sporočilo za replikacijo (glej proto replicatedwrite)
-    version := ns.NextVersion()
+    writeID := ns.NextWriteID()
     rw := &pb.ReplicatedWrite{
-		Version: version,
+		WriteId: writeID,
 		Op:      "CreateTopic",
 		Payload: data,
 	}
 	
 	// Registriraj čakajoči ACK
-	chanACK := s.replication.RegisterPendingACK(version)
+	chanACK := s.replication.RegisterPendingACK(writeID)
 
 
 	// Repliciraj/pošlji nasledniku (v verigi)
     if err := s.replication.ReplicateFromHead(rw); err != nil {
-        s.replication.CancelPendingACK(version)
+        s.replication.CancelPendingACK(writeID)
         return nil, err
     }
 
@@ -98,7 +98,7 @@ func (s *Server) CreateTopic(ctx context.Context, in *pb.CreateTopicRequest) (*p
             // ACK prejet
             return &pb.Topic{}, nil
         case <-ctx.Done():
-            s.replication.CancelPendingACK(version)
+            s.replication.CancelPendingACK(writeID)
             return nil, status.Errorf(codes.DeadlineExceeded, "PostMessage not acknowledged in time")
 	}
 }
@@ -116,19 +116,19 @@ func (s *Server) PostMessage(ctx context.Context, in *pb.PostMessageRequest) (*p
 	}
 
 	// Zgradi sporočilo za replikacijo (glej proto replicatedwrite)
-    version := ns.NextVersion()
+    writeID := ns.NextWriteID()
     rw := &pb.ReplicatedWrite{
-		Version: version,
+		WriteId: writeID,
 		Op:      "PostMessage",
 		Payload: data,
 	}
 
 	// Registriraj čakajoči ACK
-	chanACK := s.replication.RegisterPendingACK(version)
+	chanACK := s.replication.RegisterPendingACK(writeID)
 
 	// (Kot glava) Lokalno apliciraj in pošlji nasledniku (v verigi)
     if err := s.replication.ReplicateFromHead(rw); err != nil {
-        s.replication.CancelPendingACK(version)
+        s.replication.CancelPendingACK(writeID)
         return nil, err
     }
 
@@ -137,7 +137,7 @@ func (s *Server) PostMessage(ctx context.Context, in *pb.PostMessageRequest) (*p
             // ACK prejet
             return &pb.Message{}, nil
         case <-ctx.Done():
-            s.replication.CancelPendingACK(version)
+            s.replication.CancelPendingACK(writeID)
             return nil, status.Errorf(codes.DeadlineExceeded, "PostMessage not acknowledged in time")
 	}
 }
@@ -155,19 +155,19 @@ func (s *Server) UpdateMessage(ctx context.Context, in *pb.UpdateMessageRequest)
 	}
 
 	// Zgradi sporočilo za replikacijo (glej proto replicatedwrite)
-    version := ns.NextVersion()
+    writeID := ns.NextWriteID()
     rw := &pb.ReplicatedWrite{
-		Version: version,
+		WriteId: writeID,
 		Op:      "UpdateMessage",
 		Payload: data,
 	}
 
 	// Registriraj čakajoči ACK
-	chanACK := s.replication.RegisterPendingACK(version)
+	chanACK := s.replication.RegisterPendingACK(writeID)
 
 	// (Kot glava) Lokalno apliciraj in pošlji nasledniku (v verigi)
     if err := s.replication.ReplicateFromHead(rw); err != nil {
-        s.replication.CancelPendingACK(version)
+        s.replication.CancelPendingACK(writeID)
         return nil, err
     }
 
@@ -175,7 +175,7 @@ func (s *Server) UpdateMessage(ctx context.Context, in *pb.UpdateMessageRequest)
         case <-chanACK:
             return &pb.Message{}, nil
         case <-ctx.Done():
-            s.replication.CancelPendingACK(version)
+            s.replication.CancelPendingACK(writeID)
             return nil, status.Errorf(codes.DeadlineExceeded, "PostMessage not acknowledged in time")
 	}
 }
@@ -192,18 +192,18 @@ func (s *Server) DeleteMessage(ctx context.Context, in *pb.DeleteMessageRequest)
 	}
 
 	// Zgradi sporočilo za replikacijo (glej proto replicatedwrite)
-    version := ns.NextVersion()
+    writeID := ns.NextWriteID()
     rw := &pb.ReplicatedWrite{
-		Version: version,
+		WriteId: writeID,
 		Op:      "DeleteMessage",
 		Payload: data,
 	}
     
     // Registriraj čakajoči ACK
-	chanACK := s.replication.RegisterPendingACK(version)
+	chanACK := s.replication.RegisterPendingACK(writeID)
     
     if err := s.replication.ReplicateFromHead(rw); err != nil {
-        s.replication.CancelPendingACK(version)
+        s.replication.CancelPendingACK(writeID)
         return nil, err 
     }   
 
@@ -211,7 +211,7 @@ func (s *Server) DeleteMessage(ctx context.Context, in *pb.DeleteMessageRequest)
         case <-chanACK:
             return &emptypb.Empty{}, nil 
         case <-ctx.Done():
-            s.replication.CancelPendingACK(version)
+            s.replication.CancelPendingACK(writeID)
             return nil, status.Errorf(codes.DeadlineExceeded, "PostMessage not acknowledged in time")
     }
 }
@@ -229,20 +229,21 @@ func (s *Server) LikeMessage(ctx context.Context, in *pb.LikeMessageRequest) (*p
 	}
 
 	// Zgradi sporočilo za replikacijo (glej proto replicatedwrite)
-    version := ns.NextVersion()
+    writeID := ns.NextWriteID()
+
     rw := &pb.ReplicatedWrite{
-		Version: version,
+		WriteId: writeID,
 		Op:      "LikeMessage",
 		Payload: data,
 	}
 
 
 	// Registriraj čakajoči ACK
-	chanACK := s.replication.RegisterPendingACK(version)
+	chanACK := s.replication.RegisterPendingACK(writeID)
 
 	// Repliciraj/pošlji nasledniku (v verigi)
     if err := s.replication.ReplicateFromHead(rw); err != nil {
-        s.replication.CancelPendingACK(version)
+        s.replication.CancelPendingACK(writeID)
         return nil, err 
     }   
 
@@ -250,7 +251,7 @@ func (s *Server) LikeMessage(ctx context.Context, in *pb.LikeMessageRequest) (*p
         case <-chanACK:
             return &pb.Message{}, nil 
         case <-ctx.Done():
-            s.replication.CancelPendingACK(version)
+            s.replication.CancelPendingACK(writeID)
             return nil, status.Errorf(codes.DeadlineExceeded, "PostMessage not acknowledged in time")
     }
 }

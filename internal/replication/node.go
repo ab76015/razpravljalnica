@@ -22,7 +22,7 @@ type NodeState struct {
 	head        *pb.NodeInfo
 	tail        *pb.NodeInfo
 	chainVersion     uint64
-    writeVersion     uint64
+    nextWriteID   uint64
 }
 
 // NewNodeState ustvari zacetno prazno stanje
@@ -38,7 +38,7 @@ func (ns *NodeState) UpdateConfig(cfg *pb.ChainConfig) {
 	ns.successor = cfg.Successor
 	ns.head = cfg.Head
 	ns.tail = cfg.Tail
-	ns.chainVersion = cfg.Version
+	ns.chainVersion = cfg.ChainVersion
 }
 
 // IsHead preveri ali je vozlisce glava
@@ -56,7 +56,7 @@ func (ns *NodeState) IsTail() bool {
 }
 
 // GetState vrne trenutni config state
-func (ns *NodeState) GetState() (pred, succ *pb.NodeInfo, version uint64) {
+func (ns *NodeState) GetState() (pred, succ *pb.NodeInfo, writeID uint64) {
 	ns.mu.RLock()
 	defer ns.mu.RUnlock()
 	return ns.predecessor, ns.successor, ns.chainVersion
@@ -76,8 +76,8 @@ func (ns *NodeState) Predecessor() *pb.NodeInfo {
 	return ns.predecessor
 }
 
-// Version vrne chainVerzijo vozlišča
-func (ns *NodeState) chainVersion() uint64 {
+// ChainVersion vrne chainVerzijo vozlišča
+func (ns *NodeState) ChainVersion() uint64 {
 	ns.mu.RLock()
 	defer ns.mu.RUnlock()
 	return ns.chainVersion
@@ -106,8 +106,8 @@ func (s *DataNodeServer) State() *NodeState {
 func (s *DataNodeServer) UpdateChainConfig(ctx context.Context, cfg *pb.ChainConfig) (*emptypb.Empty, error) {
 	s.state.UpdateConfig(cfg)
 	log.Printf(
-		"[CHAIN-UPDATE] version=%d pred=(%v) succ=(%v)\n head=(%v) tail=(%v)\n",
-		cfg.Version,
+		"[CHAIN-UPDATE] ChainVersion=%d pred=(%v) succ=(%v)\n head=(%v) tail=(%v)\n",
+		cfg.ChainVersion,
 		cfg.Predecessor,
 		cfg.Successor,
 		cfg.Head,
@@ -230,7 +230,7 @@ func (s *DataNodeServer) ForwardWrite(rw *pb.ReplicatedWrite) error {
 }
 
 // sendAckBackward vzpostavi povezavo z pred in mu pošlje ack
-func (s *DataNodeServer) sendAckBackward(version uint64) error {
+func (s *DataNodeServer) sendAckBackward(writeID uint64) error {
 	pred := s.state.Predecessor()
 
     if pred == nil {
@@ -247,7 +247,7 @@ func (s *DataNodeServer) sendAckBackward(version uint64) error {
 	client := pb.NewDataNodeClient(conn)
 
 	// repliciraj ack do predhodnika
-	ack := &pb.ReplicatedAck{Version: version}
+	ack := &pb.ReplicatedAck{WriteId: writeID}
 	_, err = client.ReplicateAck(context.Background(), ack)
 
 	return err
@@ -264,7 +264,7 @@ func (s *DataNodeServer) ReplicateWrite(ctx context.Context, req *pb.ReplicatedW
 	if s.state.IsTail() {
 		// Rep vrne ACK
 		log.Printf("Kot rep poslal ACK predhodniku.")
-		s.sendAckBackward(req.Version)
+		s.sendAckBackward(req.WriteId)
 		return &emptypb.Empty{}, nil
 	}
 
@@ -279,10 +279,10 @@ func (s *DataNodeServer) ReplicateAck(ctx context.Context, req *pb.ReplicatedAck
 	if s.state.IsHead() {
 		// ACK je prišel do glave
 		s.mu.Lock()
-		channel, ok := s.pending[req.Version]
+		channel, ok := s.pending[req.WriteId]
 		if ok {
 			close(channel)
-			delete(s.pending, req.Version)
+			delete(s.pending, req.WriteId)
 		}
 		s.mu.Unlock()
 		log.Printf("Kot glava sprejel zadnji ACK.\n")
@@ -290,31 +290,31 @@ func (s *DataNodeServer) ReplicateAck(ctx context.Context, req *pb.ReplicatedAck
 	}
 	log.Printf("Poslal ACK predhodniku.\n")
 	// Forward ack backward
-    if err := s.sendAckBackward(req.Version); err != nil {
+    if err := s.sendAckBackward(req.WriteId); err != nil {
         log.Printf("ACK forward failed: %v", err)
     }
 	return &emptypb.Empty{}, nil
 }
 
 // Registrira čakajoči ACK
-func (s *DataNodeServer) RegisterPendingACK(version uint64) chan struct{} {
+func (s *DataNodeServer) RegisterPendingACK(writeID uint64) chan struct{} {
 	ch := make(chan struct{})
 	s.mu.Lock()
-	s.pending[version] = ch
+	s.pending[writeID] = ch
 	s.mu.Unlock()
 	return ch
 }
 
 // Zbriše čakajoči ACK (zapre ga lahko le ACK receiver)
-func (s *DataNodeServer) CancelPendingACK(version uint64) {
+func (s *DataNodeServer) CancelPendingACK(writeID uint64) {
     s.mu.Lock()
-    delete(s.pending, version)
+    delete(s.pending, writeID)
     s.mu.Unlock()
 }
 
-func (ns *NodeState) NextVersion() uint64 {
+func (ns *NodeState) NextWriteID() uint64 {
 	ns.mu.Lock()
 	defer ns.mu.Unlock()
-	ns.writeVersion++
-	return ns.writeVersion
+	ns.nextWriteID++
+	return ns.nextWriteID
 }
