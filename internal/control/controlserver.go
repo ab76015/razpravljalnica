@@ -53,7 +53,7 @@ func (s *ControlServer) notifyAllNodes() {
 
     for idx, node := range nodes {
         go func(i int, n *pb.NodeInfo) {
-            conn, err := grpc.Dial(n.Address, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(3*time.Second))
+            conn, err := grpc.Dial(n.Address,grpc.WithInsecure(),)
             if err != nil {
                 log.Printf("Failed to dial node %s at %s: %v\n", n.NodeId, n.Address, err)
                 return

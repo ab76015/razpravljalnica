@@ -302,14 +302,11 @@ func (s *DataNodeServer) RegisterPendingACK(version uint64) chan struct{} {
 	return ch
 }
 
-// Zbriše čakajoči ACK
+// Zbriše čakajoči ACK (zapre ga lahko le ACK receiver)
 func (s *DataNodeServer) CancelPendingACK(version uint64) {
-	s.mu.Lock()
-	if ch, ok := s.pending[version]; ok {
-		close(ch)
-		delete(s.pending, version)
-	}
-	s.mu.Unlock()
+    s.mu.Lock()
+    delete(s.pending, version)
+    s.mu.Unlock()
 }
 
 func (ns *NodeState) NextVersion() uint64 {
