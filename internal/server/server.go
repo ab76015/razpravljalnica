@@ -301,3 +301,47 @@ func (s *Server) GetMessages(ctx context.Context, in *pb.GetMessagesRequest) (*p
 	}
 	return response, nil
 }
+
+// GetSubscriptionNode (HEAD ONLY) izbere subscribe vozlisce za userja 
+func (s *MessageBoardServer) GetSubscriptionNode(ctx context.Context,req *pb.SubscriptionNodeRequest,) (*pb.SubscriptionNodeResponse, error) {
+    // samo glava določi kam se lahko subscriba
+    if !s.replication.IsHead() {
+        return nil, status.Error(codes.FailedPrecondition, "not head")
+    }
+    // izberi konkreten subscribe node
+    nodes := s.replication.AllNodes()
+    node := subscriptions.SelectNode(nodes, req.UserId)
+    // ustvar grant
+    grant := &subscriptions.Grant{
+        NodeID:  node.NodeId,
+        UserID:  req.UserId,
+        Topics:  req.TopicId,
+        Expires: time.Now().Add(30 * time.Minute),
+    }
+    // grant zakodiraj v token, za lažji prenost
+    token, err := subscriptions.Encode(grant)
+    if err != nil {
+        return nil, status.Error(codes.Internal, err.Error())
+    }
+    // vrni token in subscribe node
+    return &pb.SubscriptionNodeResponse{
+        SubscribeToken: token,
+        Node:           node,
+    }, nil
+}
+
+func (s *MessageBoardServer) SubscribeTopic(req *pb.SubscribeTopicRequest,stream pb.MessageBoard_SubscribeTopicServer,) error {
+
+    grant, err := subscriptions.Decode(req.SubscribeToken)
+    if err != nil {
+        return status.Error(codes.PermissionDenied, "invalid token")
+    }
+
+    if grant.NodeID != s.self.NodeId {
+        return status.Error(codes.PermissionDenied, "wrong node")
+    }
+
+    // TODO: register subscriber, start streaming
+    select {}
+}
+
