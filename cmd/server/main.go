@@ -69,6 +69,7 @@ func main() {
 
     // poklicemo join() na control server da registriramo node na kontrolni ravnini
     // testiranje pisanja v verigi (ONLY FOR TESTING)
+    /*
     go func() {
         time.Sleep(5 * time.Second) // allow chain to stabilize
 
@@ -116,7 +117,7 @@ func main() {
         case <-time.After(5 * time.Second):
             log.Printf("[TEST] FAILURE: ACK timeout for version=%d", writeID)
         }
-    }()
+    }()*/
 
 
     log.Printf("Data plane server listening on %s\n", listenAddr)
