@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"sync"
-
 	pb "github.com/ab76015/razpravljalnica/api/pb"
 	"github.com/ab76015/razpravljalnica/internal/storage"
     "google.golang.org/grpc"
@@ -129,12 +128,15 @@ func (s *DataNodeServer) applyWrite(rw *pb.ReplicatedWrite) error {
 		if err := proto.Unmarshal(rw.Payload, &req); err != nil {
 			return err
 		}
-
+        
         _, err := s.storage.PostMessage(
             req.TopicId,
             req.UserId,
             req.Text,
         )
+        if err == nil {
+            s.notifySubscribers(event)
+        }
         return err
 
 	case "CreateUser":
@@ -169,6 +171,9 @@ func (s *DataNodeServer) applyWrite(rw *pb.ReplicatedWrite) error {
             req.UserId,
             req.Text,
         )
+        if err == nil {
+            s.notifySubscribers(event)
+        }
         return err
 
 	case "DeleteMessage":
@@ -176,6 +181,7 @@ func (s *DataNodeServer) applyWrite(rw *pb.ReplicatedWrite) error {
 		if err := proto.Unmarshal(rw.Payload, &req); err != nil {
 			return err
 		}
+        s.notifySubscribers(event)
         return s.storage.DeleteMessage(
             req.TopicId,
             req.MessageId,
@@ -192,6 +198,9 @@ func (s *DataNodeServer) applyWrite(rw *pb.ReplicatedWrite) error {
             req.MessageId,
             req.UserId,
         )
+        if err == nil {
+            s.notifySubscribers(event)
+        }
         return err
 
 	default:

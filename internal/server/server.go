@@ -5,6 +5,7 @@ import (
 	pb "github.com/ab76015/razpravljalnica/api/pb"
 	"github.com/ab76015/razpravljalnica/internal/replication"
 	"github.com/ab76015/razpravljalnica/internal/storage"
+    "github.com/ab76015/razpravljalnica/internal/subscription"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -12,14 +13,23 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+// Subscription hkrani vse naročnine (imajo vsi dataplane serverji)
+type Subscription struct {
+    userID int64
+    topics map[int64]bool
+    stream pb.MessageBoard_SubscribeTopicServer
+}
+
 type Server struct {
 	pb.UnimplementedMessageBoardServer
 	storage     storage.Storage
 	replication *replication.DataNodeServer
+    subsMu      sync.RWMutex
+    subscriptions map[string]*Subscription // key = stream ID
 }
 
 func NewMessageBoardServer(s storage.Storage, r *replication.DataNodeServer) *Server {
-	return &Server{storage: s, replication: r}
+	return &Server{storage: s, replication: r, subscriptions: make(map[string]*Subscription),}
 }
 
 // CreateUser je pisalna metoda, ki ustvari novega uporabnika
@@ -330,18 +340,63 @@ func (s *MessageBoardServer) GetSubscriptionNode(ctx context.Context,req *pb.Sub
     }, nil
 }
 
-func (s *MessageBoardServer) SubscribeTopic(req *pb.SubscribeTopicRequest,stream pb.MessageBoard_SubscribeTopicServer,) error {
-
+func (s *MessageBoardServer) SubscribeTopic(req *pb.SubscribeTopicRequest, stream pb.MessageBoard_SubscribeTopicServer,) error {
+    // dekodiraj subscribe token nazaj v json struct (glej subscribtion/grant.go)
     grant, err := subscriptions.Decode(req.SubscribeToken)
     if err != nil {
         return status.Error(codes.PermissionDenied, "invalid token")
     }
-
+    // preveri ujemanje nodeid
     if grant.NodeID != s.self.NodeId {
         return status.Error(codes.PermissionDenied, "wrong node")
     }
+    // preveri ujemanje userid
+    if grant.UserID != req.UserId {
+        return status.Error(codes.PermissionDenied, "user mismatch")
+    }
+    // preveri ali se je token iztekel
+    if time.Now().After(grant.Expires) {
+        return status.Error(codes.PermissionDenied, "token expired")
+    }
+    // preveri dovoljene topics
+    allowed := make(map[int64]bool)
+    for _, t := range grant.Topics {
+        allowed[t] = true
+    }
+    for _, t := range req.TopicId {
+        if !allowed[t] {
+            return status.Error(codes.PermissionDenied, "topic not allowed")
+        }
+    }
+    // registriraj narocnika
+        sub := &subscriber{
+        userID: req.UserId,
+        topics: allowed,
+        stream: stream,
+    }
+    // globalno unikaten identifier
+    subID := uuid.NewString()
 
-    // TODO: register subscriber, start streaming
-    select {}
+    s.subsMu.Lock()
+    s.subscriptions[subID] = sub
+    s.subsMu.Unlock()
+
+    defer func() {
+        s.subsMu.Lock()
+        delete(s.subscriptions, subID)
+        s.subsMu.Unlock()
+    }()
+
+    // blokiraj dokler se client ne disconnect-a
+    <-stream.Context().Done()
+    return nil
+}
+
+func (s *MessageBoardServer) emitEvent(ev *pb.MessageEvent) {
+    for _, sub := range s.subscriptions {
+        if sub.topics[ev.Message.TopicId] {
+            sub.stream.Send(ev)
+        }
+    }
 }
 
