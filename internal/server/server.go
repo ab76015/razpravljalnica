@@ -237,7 +237,6 @@ func (s *Server) LikeMessage(ctx context.Context, in *pb.LikeMessageRequest) (*p
 		Payload: data,
 	}
 
-
 	// Registriraj čakajoči ACK
 	chanACK := s.replication.RegisterPendingACK(writeID)
 
@@ -256,8 +255,25 @@ func (s *Server) LikeMessage(ctx context.Context, in *pb.LikeMessageRequest) (*p
     }
 }
 
+// requireTail preveri, če je vozlišče rep
+func requireTail(ns *replication.NodeState) error {
+	if !ns.IsTail() {
+		return status.Errorf(
+			codes.FailedPrecondition,
+			"reads are allowed only on tail node",
+		)
+	}
+	return nil
+}
+
+
+// ListTopics je enkratna bralna metoda (se bere iz repa).
 func (s *Server) ListTopics(ctx context.Context, _ *emptypb.Empty) (*pb.ListTopicsResponse, error) {
-	topics, err := s.storage.ListTopics()
+	ns := s.replication.State()
+	if err := requireTail(ns); err != nil {
+		return nil, err
+	}
+    topics, err := s.storage.ListTopics()
 	if err != nil {
 		return nil, err
 	}
@@ -268,8 +284,13 @@ func (s *Server) ListTopics(ctx context.Context, _ *emptypb.Empty) (*pb.ListTopi
 	return response, nil
 }
 
+// GetMessages je enkratna bralna metoda (se bere iz repa).
 func (s *Server) GetMessages(ctx context.Context, in *pb.GetMessagesRequest) (*pb.GetMessagesResponse, error) {
-	msgs, err := s.storage.GetMessages(in.TopicId, in.FromMessageId, in.Limit)
+	ns := s.replication.State()
+	if err := requireTail(ns); err != nil {
+		return nil, err
+	}
+    msgs, err := s.storage.GetMessages(in.TopicId, in.FromMessageId, in.Limit)
 	if err != nil {
 		return nil, err
 	}
