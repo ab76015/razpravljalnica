@@ -5,7 +5,6 @@ import (
     "time"
 )
 
-
 type User struct {
     ID  int64
     Name string
@@ -41,4 +40,3 @@ type Storage interface {
     ListTopics() ([]*Topic, error)
     GetMessages(topicID int64, fromMsgID int64, limit int32) ([]*Message, error)
 }
-

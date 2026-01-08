@@ -40,6 +40,13 @@ func (ns *NodeState) UpdateConfig(cfg *pb.ChainConfig) {
 	ns.chainVersion = cfg.ChainVersion
 }
 
+// Vrne nodeinfo vozlisca samega, ki pripada stanju ns
+func (ns *NodeState) Self() *pb.NodeInfo {
+    ns.mu.RLock()
+    defer ns.mu.RUnlock()
+    return ns.self
+}
+
 // IsHead preveri ali je vozlisce glava
 func (ns *NodeState) IsHead() bool {
 	ns.mu.RLock()
@@ -128,15 +135,12 @@ func (s *DataNodeServer) applyWrite(rw *pb.ReplicatedWrite) error {
 		if err := proto.Unmarshal(rw.Payload, &req); err != nil {
 			return err
 		}
-        
+
         _, err := s.storage.PostMessage(
             req.TopicId,
             req.UserId,
             req.Text,
         )
-        if err == nil {
-            s.notifySubscribers(event)
-        }
         return err
 
 	case "CreateUser":
@@ -171,9 +175,6 @@ func (s *DataNodeServer) applyWrite(rw *pb.ReplicatedWrite) error {
             req.UserId,
             req.Text,
         )
-        if err == nil {
-            s.notifySubscribers(event)
-        }
         return err
 
 	case "DeleteMessage":
@@ -181,7 +182,6 @@ func (s *DataNodeServer) applyWrite(rw *pb.ReplicatedWrite) error {
 		if err := proto.Unmarshal(rw.Payload, &req); err != nil {
 			return err
 		}
-        s.notifySubscribers(event)
         return s.storage.DeleteMessage(
             req.TopicId,
             req.MessageId,
@@ -198,16 +198,12 @@ func (s *DataNodeServer) applyWrite(rw *pb.ReplicatedWrite) error {
             req.MessageId,
             req.UserId,
         )
-        if err == nil {
-            s.notifySubscribers(event)
-        }
         return err
 
 	default:
 		return fmt.Errorf("unknown op %s", rw.Op)
 	}
 }
-
 
 // ReplicateFromHead LOCAL APPLY + FORWARD mora biti ena operacija
 func (s *DataNodeServer) ReplicateFromHead(rw *pb.ReplicatedWrite) error {
@@ -216,7 +212,6 @@ func (s *DataNodeServer) ReplicateFromHead(rw *pb.ReplicatedWrite) error {
     }
     return s.ForwardWrite(rw)
 }
-
 
 // ForwardWrite vzpostavi povezavo z succ in mu pošlje rw
 func (s *DataNodeServer) ForwardWrite(rw *pb.ReplicatedWrite) error {

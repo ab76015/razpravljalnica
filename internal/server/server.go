@@ -312,7 +312,7 @@ func (s *Server) GetMessages(ctx context.Context, in *pb.GetMessagesRequest) (*p
 	return response, nil
 }
 
-// GetSubscriptionNode (HEAD ONLY) izbere subscribe vozlisce za userja 
+// GetSubscriptionNode (HEAD ONLY) izbere subscribe vozlisce za userja in mu vse info zakodira in vrne kot token
 func (s *MessageBoardServer) GetSubscriptionNode(ctx context.Context,req *pb.SubscriptionNodeRequest,) (*pb.SubscriptionNodeResponse, error) {
     // samo glava določi kam se lahko subscriba
     if !s.replication.IsHead() {
@@ -321,14 +321,14 @@ func (s *MessageBoardServer) GetSubscriptionNode(ctx context.Context,req *pb.Sub
     // izberi konkreten subscribe node
     nodes := s.replication.AllNodes()
     node := subscriptions.SelectNode(nodes, req.UserId)
-    // ustvar grant
+    // ustvari subscribtion grant
     grant := &subscriptions.Grant{
         NodeID:  node.NodeId,
         UserID:  req.UserId,
         Topics:  req.TopicId,
         Expires: time.Now().Add(30 * time.Minute),
     }
-    // grant zakodiraj v token, za lažji prenost
+    // grant zakodiraj v token, za lažji prenos
     token, err := subscriptions.Encode(grant)
     if err != nil {
         return nil, status.Error(codes.Internal, err.Error())
@@ -340,6 +340,7 @@ func (s *MessageBoardServer) GetSubscriptionNode(ctx context.Context,req *pb.Sub
     }, nil
 }
 
+// SubscribeTopic omogoča klientu da se naroči na topic preko tokena, ki ga je prejel
 func (s *MessageBoardServer) SubscribeTopic(req *pb.SubscribeTopicRequest, stream pb.MessageBoard_SubscribeTopicServer,) error {
     // dekodiraj subscribe token nazaj v json struct (glej subscribtion/grant.go)
     grant, err := subscriptions.Decode(req.SubscribeToken)
@@ -347,7 +348,7 @@ func (s *MessageBoardServer) SubscribeTopic(req *pb.SubscribeTopicRequest, strea
         return status.Error(codes.PermissionDenied, "invalid token")
     }
     // preveri ujemanje nodeid
-    if grant.NodeID != s.self.NodeId {
+    if grant.NodeID != s.replication.State().Self().NodeId  {
         return status.Error(codes.PermissionDenied, "wrong node")
     }
     // preveri ujemanje userid
@@ -369,7 +370,7 @@ func (s *MessageBoardServer) SubscribeTopic(req *pb.SubscribeTopicRequest, strea
         }
     }
     // registriraj narocnika
-        sub := &subscriber{
+    sub := &Subscription{
         userID: req.UserId,
         topics: allowed,
         stream: stream,
@@ -393,6 +394,8 @@ func (s *MessageBoardServer) SubscribeTopic(req *pb.SubscribeTopicRequest, strea
 }
 
 func (s *MessageBoardServer) emitEvent(ev *pb.MessageEvent) {
+    s.subsMu.RLock()
+    defer s.subsMu.RUnlock()
     for _, sub := range s.subscriptions {
         if sub.topics[ev.Message.TopicId] {
             sub.stream.Send(ev)
