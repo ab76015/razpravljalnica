@@ -2,12 +2,15 @@ package server
 
 import (
 	"context"
-	pb "github.com/ab76015/razpravljalnica/api/pb"
+	"sync"
+    "time"
+    pb "github.com/ab76015/razpravljalnica/api/pb"
 	"github.com/ab76015/razpravljalnica/internal/replication"
 	"github.com/ab76015/razpravljalnica/internal/storage"
     "github.com/ab76015/razpravljalnica/internal/subscription"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+    "github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -319,23 +322,23 @@ func (s *Server) GetMessages(ctx context.Context, in *pb.GetMessagesRequest) (*p
 }
 
 // GetSubscriptionNode (HEAD ONLY) izbere subscribe vozlisce za userja in mu vse info zakodira in vrne kot token
-func (s *MessageBoardServer) GetSubscriptionNode(ctx context.Context,req *pb.SubscriptionNodeRequest,) (*pb.SubscriptionNodeResponse, error) {
+func (s *Server) GetSubscriptionNode(ctx context.Context,req *pb.SubscriptionNodeRequest,) (*pb.SubscriptionNodeResponse, error) {
     // samo glava določi kam se lahko subscriba
     if !s.replication.IsHead() {
         return nil, status.Error(codes.FailedPrecondition, "not head")
     }
     // izberi konkreten subscribe node
     nodes := s.replication.AllNodes()
-    node := subscriptions.SelectNode(nodes, req.UserId)
+    node := subscription.SelectNode(nodes, req.UserId)
     // ustvari subscribtion grant
-    grant := &subscriptions.Grant{
+    grant := &subscription.Grant{
         NodeID:  node.NodeId,
         UserID:  req.UserId,
         Topics:  req.TopicId,
         Expires: time.Now().Add(30 * time.Minute),
     }
     // grant zakodiraj v token, za lažji prenos
-    token, err := subscriptions.Encode(grant)
+    token, err := subscription.Encode(grant)
     if err != nil {
         return nil, status.Error(codes.Internal, err.Error())
     }
@@ -347,9 +350,9 @@ func (s *MessageBoardServer) GetSubscriptionNode(ctx context.Context,req *pb.Sub
 }
 
 // SubscribeTopic omogoča klientu da se naroči na topic preko tokena, ki ga je prejel
-func (s *MessageBoardServer) SubscribeTopic(req *pb.SubscribeTopicRequest, stream pb.MessageBoard_SubscribeTopicServer,) error {
+func (s *Server) SubscribeTopic(req *pb.SubscribeTopicRequest, stream pb.MessageBoard_SubscribeTopicServer,) error {
     // dekodiraj subscribe token nazaj v json struct (glej subscribtion/grant.go)
-    grant, err := subscriptions.Decode(req.SubscribeToken)
+    grant, err := subscription.Decode(req.SubscribeToken)
     if err != nil {
         return status.Error(codes.PermissionDenied, "invalid token")
     }
@@ -425,7 +428,7 @@ func (s *MessageBoardServer) SubscribeTopic(req *pb.SubscribeTopicRequest, strea
     return nil
 }
 
-func (s *MessageBoardServer) emitEvent(ev *pb.MessageEvent) {
+func (s *Server) emitEvent(ev *pb.MessageEvent) {
     s.subsMu.RLock()
     defer s.subsMu.RUnlock()
     for _, sub := range s.subscriptions {
@@ -434,4 +437,3 @@ func (s *MessageBoardServer) emitEvent(ev *pb.MessageEvent) {
         }
     }
 }
-

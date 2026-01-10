@@ -10,6 +10,7 @@ import (
     "google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
+    "google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // NodeState vsebuje lokalno informacijo o sosedih in verzijo verige
@@ -211,9 +212,48 @@ func (s *DataNodeServer) applyWrite(rw *pb.ReplicatedWrite) error {
 
 // ReplicateFromHead LOCAL APPLY + FORWARD mora biti ena operacija
 func (s *DataNodeServer) ReplicateFromHead(rw *pb.ReplicatedWrite) error {
+    // apliciraj (dirty) lokalno
     if err := s.applyWrite(rw); err != nil {
         return err
     }
+
+    // ce ni nasledniko -> ta node je rep (en node v verigi). Oznaci commited in obvesti.
+    if s.state.Successor() == nil {
+        log.Printf("ReplicateFromHead: vozlisce je rep (single-node). Oznacili zapis %d committed.\n", rw.WriteId)
+        rec, err := s.storage.MarkCommitted(rw.WriteId)
+        if err == nil && rec != nil {
+            ev := &pb.MessageEvent{
+                SequenceNumber: int64(rw.WriteId),
+                Op:             pb.OpType_OP_POST,
+                Message: &pb.Message{
+                    Id:        rec.ID,
+                    TopicId:   rec.TopicID,
+                    UserId:    rec.UserID,
+                    Text:      rec.Text,
+                    CreatedAt: timestamppb.New(rec.CreatedAt),
+                    Likes:     rec.Likes,
+                },
+                EventAt: timestamppb.Now(),
+            }
+            s.notifyCommit(ev)
+        } else if err != nil {
+            log.Printf("ReplicateFromHead: MarkCommitted error: %v\n", err)
+        }
+
+        // If this node is also head, there may be a pending channel waiting; emulate ack arrival
+        if s.state.IsHead() {
+            s.mu.Lock()
+            ch, ok := s.pending[rw.WriteId]
+            if ok {
+                close(ch)
+                delete(s.pending, rw.WriteId)
+            }
+            s.mu.Unlock()
+        }
+        return nil
+    }
+
+    // sicer poslji naslednjiku
     return s.ForwardWrite(rw)
 }
 

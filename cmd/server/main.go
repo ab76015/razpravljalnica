@@ -67,58 +67,6 @@ func main() {
     pb.RegisterMessageBoardServer(grpcServer, messageBoardSrv)
     pb.RegisterDataNodeServer(grpcServer, replicationSrv)
 
-    // poklicemo join() na control server da registriramo node na kontrolni ravnini
-    // testiranje pisanja v verigi (ONLY FOR TESTING)
-    /*
-    go func() {
-        time.Sleep(5 * time.Second) // allow chain to stabilize
-
-        log.Printf("[TEST] am I head? %v", nodeState.IsHead())
-        if !nodeState.IsHead() {
-            return
-        }
-
-        log.Println("[TEST] initiating CreateTopic replication test")
-
-        // 1. Build a write with NO preconditions
-        req := &pb.CreateTopicRequest{
-            Name: "chain-replication-test",
-        }
-
-        payload, err := proto.Marshal(req)
-        if err != nil {
-            log.Printf("[TEST] marshal failed: %v", err)
-            return
-        }
-
-        // 2. Allocate version
-        writeID := nodeState.NextWriteID()
-
-        rw := &pb.ReplicatedWrite{
-            WriteId: writeID,
-            Op:      "CreateTopic",
-            Payload: payload,
-        }
-
-        // 3. Register ACK wait
-        ackCh := replicationSrv.RegisterPendingACK(writeID)
-        defer replicationSrv.CancelPendingACK(writeID)
-
-        // 4. Replicate from head (LOCAL APPLY + FORWARD)
-        if err := replicationSrv.ReplicateFromHead(rw); err != nil {
-            log.Printf("[TEST] replicate failed: %v", err)
-            return
-        }
-
-        // 5. Wait for ACK from tail
-        select {
-        case <-ackCh:
-            log.Printf("[TEST] SUCCESS: version=%d fully replicated & committed", writeID)
-        case <-time.After(5 * time.Second):
-            log.Printf("[TEST] FAILURE: ACK timeout for version=%d", writeID)
-        }
-    }()*/
-
 
     log.Printf("Data plane server listening on %s\n", listenAddr)
     if err := grpcServer.Serve(lis); err != nil {
