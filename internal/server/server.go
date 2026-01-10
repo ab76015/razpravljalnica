@@ -28,8 +28,14 @@ type Server struct {
     subscriptions map[string]*Subscription // key = stream ID
 }
 
+// NewMessageBoardServer: register commit listener
 func NewMessageBoardServer(s storage.Storage, r *replication.DataNodeServer) *Server {
-	return &Server{storage: s, replication: r, subscriptions: make(map[string]*Subscription),}
+    srv := &Server{storage: s, replication: r, subscriptions: make(map[string]*Subscription)}
+    // registriraj commit listener, da server-level je obvescen
+    r.RegisterCommitListener(func(ev *pb.MessageEvent) {
+        srv.emitEvent(ev)
+    })
+    return srv
 }
 
 // CreateUser je pisalna metoda, ki ustvari novega uporabnika
@@ -369,7 +375,33 @@ func (s *MessageBoardServer) SubscribeTopic(req *pb.SubscribeTopicRequest, strea
             return status.Error(codes.PermissionDenied, "topic not allowed")
         }
     }
-    // registriraj narocnika
+    //1) streamaj vse stare commitane msgs za requestan topic
+    for _, topic := range req.TopicId {
+        msgs, err := s.storage.GetCommittedMessages(topic, req.FromMessageId, 0) // 0 => no limit; vrni vse do zdaj
+        if err != nil {
+            return status.Error(codes.Internal, err.Error())
+        }
+        for _, m := range msgs {
+            ev := &pb.MessageEvent{
+                SequenceNumber: int64(0), // sequence = write id, unavailable here in Message; keep 0 or if you change storage to return writeID, fill it
+                Op:             pb.OpType_OP_POST,
+                Message: &pb.Message{
+                    Id:        m.ID,
+                    TopicId:   m.TopicID,
+                    UserId:    m.UserID,
+                    Text:      m.Text,
+                    CreatedAt: timestamppb.New(m.CreatedAt),
+                    Likes:     m.Likes,
+                },
+                EventAt: timestamppb.Now(),
+            }
+            if err := stream.Send(ev); err != nil {
+                return nil
+            }
+        }
+    }
+
+    // registriraj narocnika za prihodnje commitane evente
     sub := &Subscription{
         userID: req.UserId,
         topics: allowed,

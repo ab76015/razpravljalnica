@@ -390,6 +390,7 @@ func (s *DataNodeServer) notifyCommit(ev *pb.MessageEvent) {
                     log.Printf("commit listener panicked: %v", r)
                 }
             }()
+            // med drugim poklice emitEvent iz server.go, ki poslje vsem subscriberjem
             f(ev)
         }(fn)
     }
