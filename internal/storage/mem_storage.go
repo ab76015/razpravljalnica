@@ -1,6 +1,5 @@
 package storage
 
-
 import (
     "errors"
     "sync"
@@ -16,6 +15,14 @@ type MemStorage struct {
     nextUserID int64
     nextTopicID int64
     nextMsgID int64
+
+    // CRAQ
+    // writeID -> message pointer
+    writes map[uint64]*Message
+    // msgID -> writeID (obratni map)
+    msgWrite map[int64]uint64
+    // committed map za writeID -> bool
+    committed map[uint64]bool
 }
 
 func NewMemStorage() *MemStorage {
@@ -27,6 +34,10 @@ func NewMemStorage() *MemStorage {
         nextUserID:  1,
         nextTopicID: 1,
         nextMsgID:   1,
+        // CRAQ
+        writes:    make(map[uint64]*Message),
+        msgWrite:  make(map[int64]uint64),
+        committed: make(map[uint64]bool),
     }
 }
 
@@ -54,6 +65,33 @@ func (m *MemStorage) CreateTopic(name string) (*Topic, error) {
     m.topics[m.nextTopicID] = t
     m.nextTopicID++
     return t, nil
+}
+// CRAQ, nastavi msg kot 'dirty' sprva
+func (m *MemStorage) PostMessageWithWriteID(topicID, userID int64, text string, writeID uint64) (*Message, error) {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+
+    if _, ok := m.topics[topicID]; !ok {
+        return nil, errors.New("topic not found")
+    }
+    if _, ok := m.users[userID]; !ok {
+        return nil, errors.New("user not found")
+    }
+
+    msg := &Message{
+        ID:        m.nextMsgID,
+        TopicID:   topicID,
+        UserID:    userID,
+        Text:      text,
+        CreatedAt: time.Now(),
+        Likes:     0,
+    }
+    m.messages[m.nextMsgID] = msg
+    m.msgWrite[m.nextMsgID] = writeID
+    m.writes[writeID] = msg
+    m.committed[writeID] = false
+    m.nextMsgID++
+    return msg, nil
 }
 
 func (m *MemStorage) PostMessage(topicID, userID int64, text string) (*Message, error) {
@@ -195,5 +233,54 @@ func (m *MemStorage) GetMessages(topicID, fromMsgID int64, limit int32) ([]*Mess
         }
     }
     return messages, nil
+}
+
+
+// MarkCommitted nastavi writeID kot commited in vrne message.
+func (m *MemStorage) MarkCommitted(writeID uint64) (*Message, error) {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+
+    msg, ok := m.writes[writeID]
+    if !ok {
+        return nil, errors.New("write id not found")
+    }
+    m.committed[writeID] = true
+    return msg, nil
+}
+
+// GetCommittedMessages returns committed messages (ID > fromMsgID) for topic.
+func (m *MemStorage) GetCommittedMessages(topicID, fromMsgID int64, limit int32) ([]*Message, error) {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+
+    if _, ok := m.topics[topicID]; !ok {
+        return nil, errors.New("topic not found")
+    }
+
+    if limit < 0 {
+        limit = 0
+    }
+
+    out := []*Message{}
+    for id := fromMsgID + 1; id < m.nextMsgID; id++ {
+        msg, ok := m.messages[id]
+        if !ok || msg.TopicID != topicID {
+            continue
+        }
+        writeID, ok := m.msgWrite[id]
+        if !ok {
+            continue
+        }
+        committed, ok := m.committed[writeID]
+        if !ok || !committed {
+            continue
+        }
+        out = append(out, msg)
+        if limit > 0 && int32(len(out)) >= limit {
+            break
+        }
+    }
+    return out, nil
 }
 

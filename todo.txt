@@ -1,7 +1,0 @@
-replace []byte("test-write") with real marshalled ops
-
-add pending-ack map at head
-
-block client until ack
-
-add failure handling

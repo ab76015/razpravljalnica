@@ -39,4 +39,8 @@ type Storage interface {
     LikeMessage(topicID int64, msgID int64, userID int64) (*Message, error)
     ListTopics() ([]*Topic, error)
     GetMessages(topicID int64, fromMsgID int64, limit int32) ([]*Message, error)
+    // CRAQ
+    PostMessageWithWriteID(topicID int64, userID int64, text string, writeID uint64) (*Message, error)
+    MarkCommitted(writeID uint64) (*Message, error)
+    GetCommittedMessages(topicID int64, fromMsgID int64, limit int32) ([]*Message, error)
 }
