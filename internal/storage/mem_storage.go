@@ -284,3 +284,4 @@ func (m *MemStorage) GetCommittedMessages(topicID, fromMsgID int64, limit int32)
     return out, nil
 }
 
+

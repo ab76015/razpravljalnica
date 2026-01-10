@@ -96,11 +96,15 @@ type DataNodeServer struct {
     storage storage.Storage
 	pending map[uint64]chan struct{}
 	mu      sync.Mutex
+    
+    // se poklice ko je write commitan na tem vozliscu (callbacks v bistvu)
+    commitListenersMu sync.RWMutex
+    commitListeners []func(ev *pb.MessageEvent)
 }
 
 // NewDataNodeServer je konstruktor, ki sprejme NodeState in ustvari abstrakcijo streznika za verizno replikacijo
 func NewDataNodeServer(state *NodeState, st storage.Storage) *DataNodeServer {
-	return &DataNodeServer{state: state, storage: st, pending: make(map[uint64]chan struct{})}
+	return &DataNodeServer{state: state, storage: st, pending: make(map[uint64]chan struct{}), commitListeners: make([]func(ev *pb.MessageEvent), 0)}
 }
 
 // State vrne je getter za kazalec na stanje (NodeState) trenutnega DataNodeServer strežnika
@@ -129,79 +133,79 @@ func (s *DataNodeServer) ApplyWrite(rw *pb.ReplicatedWrite) error {
 
 func (s *DataNodeServer) applyWrite(rw *pb.ReplicatedWrite) error {
 	switch rw.Op {
+        case "PostMessage":
+            var req pb.PostMessageRequest
+            if err := proto.Unmarshal(rw.Payload, &req); err != nil {
+                return err
+            }
+            // CRAQ verzija PostMessage; sprva dirty writeID
+            _, err := s.storage.PostMessageWithWriteID(
+                req.TopicId,
+                req.UserId,
+                req.Text,
+                rw.WriteId,
+            )
+            return err
 
-	case "PostMessage":
-		var req pb.PostMessageRequest
-		if err := proto.Unmarshal(rw.Payload, &req); err != nil {
-			return err
-		}
+        case "CreateUser":
+            var req pb.CreateUserRequest
+            if err := proto.Unmarshal(rw.Payload, &req); err != nil {
+                return err
+            }
 
-        _, err := s.storage.PostMessage(
-            req.TopicId,
-            req.UserId,
-            req.Text,
-        )
-        return err
+            _, err := s.storage.CreateUser(req.Name)
+            return err
 
-	case "CreateUser":
-		var req pb.CreateUserRequest
-		if err := proto.Unmarshal(rw.Payload, &req); err != nil {
-			return err
-		}
+        case "CreateTopic":
+            var req pb.CreateTopicRequest
+            if err := proto.Unmarshal(rw.Payload, &req); err != nil {
+                return err
+            }
+            
+            _, err := s.storage.CreateTopic(
+                req.Name,
+            )
+            return err
 
-        _, err := s.storage.CreateUser(req.Name)
-        return err
+        case "UpdateMessage":
+            var req pb.UpdateMessageRequest
+            if err := proto.Unmarshal(rw.Payload, &req); err != nil {
+                return err
+            }
+            
+            _, err := s.storage.UpdateMessage(
+                req.TopicId,
+                req.MessageId,
+                req.UserId,
+                req.Text,
+            )
+            return err
 
-	case "CreateTopic":
-		var req pb.CreateTopicRequest
-		if err := proto.Unmarshal(rw.Payload, &req); err != nil {
-			return err
-		}
-        
-        _, err := s.storage.CreateTopic(
-            req.Name,
-        )
-        return err
+        case "DeleteMessage":
+            var req pb.DeleteMessageRequest
+            if err := proto.Unmarshal(rw.Payload, &req); err != nil {
+                return err
+            }
+            return s.storage.DeleteMessage(
+                req.TopicId,
+                req.MessageId,
+                req.UserId,
+            )
 
-	case "UpdateMessage":
-		var req pb.UpdateMessageRequest
-		if err := proto.Unmarshal(rw.Payload, &req); err != nil {
-			return err
-		}
-        
-        _, err := s.storage.UpdateMessage(
-            req.TopicId,
-            req.MessageId,
-            req.UserId,
-            req.Text,
-        )
-        return err
+        case "LikeMessage":
+            var req pb.LikeMessageRequest
+            if err := proto.Unmarshal(rw.Payload, &req); err != nil {
+                return err
+            }
+            _, err := s.storage.LikeMessage(
+                req.TopicId,
+                req.MessageId,
+                req.UserId,
+            )
+            return err
 
-	case "DeleteMessage":
-		var req pb.DeleteMessageRequest
-		if err := proto.Unmarshal(rw.Payload, &req); err != nil {
-			return err
-		}
-        return s.storage.DeleteMessage(
-            req.TopicId,
-            req.MessageId,
-            req.UserId,
-        )
-
-	case "LikeMessage":
-		var req pb.LikeMessageRequest
-		if err := proto.Unmarshal(rw.Payload, &req); err != nil {
-			return err
-		}
-        _, err := s.storage.LikeMessage(
-            req.TopicId,
-            req.MessageId,
-            req.UserId,
-        )
-        return err
-
-	default:
-		return fmt.Errorf("unknown op %s", rw.Op)
+        default:
+            return fmt.Errorf("unknown op %s", rw.Op)
 	}
 }
 
@@ -266,8 +270,27 @@ func (s *DataNodeServer) ReplicateWrite(ctx context.Context, req *pb.ReplicatedW
 
 	log.Printf("Prejel sporočilo od predhodnika in ga zapisal v lokalni storage.\n")
 	if s.state.IsTail() {
-		// Rep vrne ACK
-		log.Printf("Kot rep poslal ACK predhodniku.")
+		// Rep vrne ACK in obvesti svoje subscriberje o novem dogodku
+		log.Printf("Kot rep: oznacil zapis %d committed in poslal ACK nazaj.\n", req.WriteId)
+        rec, err := s.storage.MarkCommitted(req.WriteId)
+        if err == nil && rec != nil {
+            ev := &pb.MessageEvent{
+                SequenceNumber: int64(req.WriteId),
+                Op:             pb.OpType_OP_POST,
+                Message: &pb.Message{
+                    Id:        rec.ID,
+                    TopicId:   rec.TopicID,
+                    UserId:    rec.UserID,
+                    Text:      rec.Text,
+                    CreatedAt: timestamppb.New(rec.CreatedAt),
+                    Likes:     rec.Likes,
+                },
+                EventAt: timestamppb.Now(),
+            }
+            s.notifyCommit(ev)
+        } else if err != nil {
+            log.Printf("Rep: MarkCommitted error: %v\n", err)
+        }
 		s.sendAckBackward(req.WriteId)
 		return &emptypb.Empty{}, nil
 	}
@@ -280,7 +303,29 @@ func (s *DataNodeServer) ReplicateWrite(ctx context.Context, req *pb.ReplicatedW
 
 // ReplicateAck je grpc metoda (glej proto), ki pošlje ra predhodniku
 func (s *DataNodeServer) ReplicateAck(ctx context.Context, req *pb.ReplicatedAck) (*emptypb.Empty, error) {
-	if s.state.IsHead() {
+	// Oznaci kot commited lokalno in obvesti subscriberje
+    rec, err := s.storage.MarkCommitted(req.WriteId)
+    if err == nil && rec != nil {
+        ev := &pb.MessageEvent{
+            SequenceNumber: int64(req.WriteId),
+            Op:             pb.OpType_OP_POST,
+            Message: &pb.Message{
+                Id:        rec.ID,
+                TopicId:   rec.TopicID,
+                UserId:    rec.UserID,
+                Text:      rec.Text,
+                CreatedAt: timestamppb.New(rec.CreatedAt),
+                Likes:     rec.Likes,
+            },
+            EventAt: timestamppb.Now(),
+        }
+        s.notifyCommit(ev)
+    } else if err != nil {
+        // not fatal: morda nismo imeli zapisa lokalno (log and continue)
+        log.Printf("warning, ReplicateAck: MarkCommitted error for write %d: %v\n", req.WriteId, err)
+    }
+
+    if s.state.IsHead() {
 		// ACK je prišel do glave
 		s.mu.Lock()
 		channel, ok := s.pending[req.WriteId]
@@ -322,3 +367,31 @@ func (ns *NodeState) NextWriteID() uint64 {
 	ns.nextWriteID++
 	return ns.nextWriteID
 }
+
+// Commit listener upravljanje; doda callback v rezino; poveze server.go z node.go
+func (s *DataNodeServer) RegisterCommitListener(fn func(ev *pb.MessageEvent)) {
+    s.commitListenersMu.Lock()
+    s.commitListeners = append(s.commitListeners, fn)
+    s.commitListenersMu.Unlock()
+}
+
+// Vsakic ko se zgodi commit obvesti subscriberje
+func (s *DataNodeServer) notifyCommit(ev *pb.MessageEvent) {
+    s.commitListenersMu.RLock()
+    listeners := make([]func(ev *pb.MessageEvent), len(s.commitListeners))
+    copy(listeners, s.commitListeners)
+    s.commitListenersMu.RUnlock()
+
+    for _, fn := range listeners {
+        // poklici async da ne blokiramo replikacije
+        go func(f func(ev *pb.MessageEvent)) {
+            defer func() {
+                if r := recover(); r != nil {
+                    log.Printf("commit listener panicked: %v", r)
+                }
+            }()
+            f(ev)
+        }(fn)
+    }
+}
+
