@@ -4,6 +4,7 @@ import (
     "errors"
     "sync"
     "time"  
+    "log"
 )
 
 type MemStorage struct {
@@ -31,9 +32,9 @@ func NewMemStorage() *MemStorage {
         topics: make(map[int64]*Topic),
         messages: make(map[int64]*Message),
         likes: make(map[Like]struct{}),
-        nextUserID:  1,
-        nextTopicID: 1,
-        nextMsgID:   1,
+        nextUserID:  0,
+        nextTopicID: 0,
+        nextMsgID:   0,
         // CRAQ
         writes:    make(map[uint64]*Message),
         msgWrite:  make(map[int64]uint64),
@@ -70,6 +71,24 @@ func (m *MemStorage) CreateTopic(name string) (*Topic, error) {
 func (m *MemStorage) PostMessageWithWriteID(topicID, userID int64, text string, writeID uint64) (*Message, error) {
     m.mu.Lock()
     defer m.mu.Unlock()
+
+    log.Printf(
+        "[DEBUG][PostMessage] topicID=%d userID=%d\n",
+        topicID, userID,
+    )
+
+    // dump topics
+    log.Printf("[DEBUG][PostMessage] topics in storage:")
+    for id, t := range m.topics {
+        log.Printf("  topic id=%d name=%q", id, t.Name)
+    }
+
+    // dump users
+    log.Printf("[DEBUG][PostMessage] users in storage:")
+    for id, u := range m.users {
+        log.Printf("  user id=%d name=%q", id, u.Name)
+    }
+
 
     if _, ok := m.topics[topicID]; !ok {
         return nil, errors.New("topic not found")
