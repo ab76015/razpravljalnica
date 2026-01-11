@@ -221,21 +221,26 @@ func (s *DataNodeServer) applyWrite(rw *pb.ReplicatedWrite) error {
             if err := proto.Unmarshal(rw.Payload, &req); err != nil {
                 return err
             }
-            return s.storage.DeleteMessage(
+            // CRAQ
+            _, err := s.storage.DeleteMessageWithWriteID(
                 req.TopicId,
                 req.MessageId,
                 req.UserId,
+                rw.WriteId,
             )
+            return err
 
         case "LikeMessage":
             var req pb.LikeMessageRequest
             if err := proto.Unmarshal(rw.Payload, &req); err != nil {
                 return err
             }
-            _, err := s.storage.LikeMessage(
+            // CRAQ
+            _, err := s.storage.LikeMessageWithWriteID(
                 req.TopicId,
                 req.MessageId,
                 req.UserId,
+                rw.WriteId, 
             )
             return err
 

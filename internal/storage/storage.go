@@ -42,6 +42,8 @@ type Storage interface {
     // CRAQ
     PostMessageWithWriteID(topicID int64, userID int64, text string, writeID uint64) (*Message, error)
     UpdateMessageWithWriteID(topicID int64, userID int64, msgID int64, text string, writeID uint64) (*Message, error)
+    DeleteMessageWithWriteID(topicID int64, msgID int64, userID int64, writeID uint64) (*Message, error)
+    LikeMessageWithWriteID(topicID int64, msgID int64, userID int64, writeID uint64) (*Message, error)
     MarkCommitted(writeID uint64) (*Message, error)
     GetCommittedMessages(topicID int64, fromMsgID int64, limit int32) ([]*Message, error)
 }
