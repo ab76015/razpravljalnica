@@ -134,8 +134,6 @@ type DataNodeServer struct {
     // se poklice ko je write commitan na tem vozliscu (callbacks v bistvu)
     commitListenersMu sync.RWMutex
     commitListeners []func(ev *pb.MessageEvent)
-
-    
 }
 
 // NewDataNodeServer je konstruktor, ki sprejme NodeState in ustvari abstrakcijo streznika za verizno replikacijo
