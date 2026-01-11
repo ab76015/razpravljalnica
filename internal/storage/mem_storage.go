@@ -113,7 +113,7 @@ func (m *MemStorage) PostMessageWithWriteID(topicID, userID int64, text string, 
     return msg, nil
 }
 
-/*
+// deprecated
 func (m *MemStorage) PostMessage(topicID, userID int64, text string) (*Message, error) {
     m.mu.Lock()
     defer m.mu.Unlock()
@@ -136,7 +136,7 @@ func (m *MemStorage) PostMessage(topicID, userID int64, text string) (*Message, 
     m.messages[m.nextMsgID] = msg
     m.nextMsgID++
     return msg, nil
-}*/
+}
 
 // CRAQ verzija
 func (m *MemStorage) UpdateMessageWithWriteID(topicID, userID, msgID int64, text string, writeID uint64) (*Message, error) {
@@ -162,7 +162,7 @@ func (m *MemStorage) UpdateMessageWithWriteID(topicID, userID, msgID int64, text
     return msg, nil 
 }
 
-/*
+// deprecated
 func (m *MemStorage) UpdateMessage(topicID, userID, msgID int64, text string) (*Message, error) {
     m.mu.Lock()
     defer m.mu.Unlock()
@@ -180,7 +180,7 @@ func (m *MemStorage) UpdateMessage(topicID, userID, msgID int64, text string) (*
 
     msg.Text = text
     return msg, nil
-}*/
+}
 
 func (m *MemStorage) DeleteMessage(topicID, userID, msgID int64) error {
     m.mu.Lock()
