@@ -89,7 +89,7 @@ func main() {
 	}()
 
 	// 5) Post a message (head path). This should cause a committed event to be emitted.
-	postCtx, postCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	postCtx, postCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer postCancel()
 
 	_, err = client.PostMessage(postCtx, &pb.PostMessageRequest{

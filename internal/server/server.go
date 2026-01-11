@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
     "time"
+//    "log"
     pb "github.com/ab76015/razpravljalnica/api/pb"
 	"github.com/ab76015/razpravljalnica/internal/replication"
 	"github.com/ab76015/razpravljalnica/internal/storage"
@@ -124,7 +125,7 @@ func (s *Server) CreateTopic(ctx context.Context, in *pb.CreateTopicRequest) (*p
 
 // PostMessage je pisalna metoda, ki ustvari novo sporočilo
 func (s *Server) PostMessage(ctx context.Context, in *pb.PostMessageRequest) (*pb.Message, error) {
-	ns := s.replication.State()
+    ns := s.replication.State()
 	if !ns.IsHead() {
 		return nil, status.Errorf(codes.FailedPrecondition, "writes allowed only on head node")
 	}

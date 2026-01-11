@@ -438,6 +438,7 @@ func (x *ReplicatedWrite) GetPayload() []byte {
 type ReplicatedAck struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	WriteId       uint64                 `protobuf:"varint,1,opt,name=write_id,json=writeId,proto3" json:"write_id,omitempty"`
+	Op            string                 `protobuf:"bytes,2,opt,name=op,proto3" json:"op,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -477,6 +478,13 @@ func (x *ReplicatedAck) GetWriteId() uint64 {
 		return x.WriteId
 	}
 	return 0
+}
+
+func (x *ReplicatedAck) GetOp() string {
+	if x != nil {
+		return x.Op
+	}
+	return ""
 }
 
 type CreateUserRequest struct {
@@ -1317,9 +1325,10 @@ const file_razpravljalnica_proto_rawDesc = "" +
 	"\x0fReplicatedWrite\x12\x19\n" +
 	"\bwrite_id\x18\x01 \x01(\x04R\awriteId\x12\x0e\n" +
 	"\x02op\x18\x02 \x01(\tR\x02op\x12\x18\n" +
-	"\apayload\x18\x03 \x01(\fR\apayload\"*\n" +
+	"\apayload\x18\x03 \x01(\fR\apayload\":\n" +
 	"\rReplicatedAck\x12\x19\n" +
-	"\bwrite_id\x18\x01 \x01(\x04R\awriteId\"'\n" +
+	"\bwrite_id\x18\x01 \x01(\x04R\awriteId\x12\x0e\n" +
+	"\x02op\x18\x02 \x01(\tR\x02op\"'\n" +
 	"\x11CreateUserRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"(\n" +
 	"\x12CreateTopicRequest\x12\x12\n" +

@@ -67,6 +67,7 @@ message ReplicatedWrite {
 
 message ReplicatedAck {
   uint64 write_id = 1;
+  string op = 2; 
 }
 
 service  MessageBoard{

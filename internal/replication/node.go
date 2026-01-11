@@ -249,30 +249,36 @@ func (s *DataNodeServer) applyWrite(rw *pb.ReplicatedWrite) error {
 func (s *DataNodeServer) ReplicateFromHead(rw *pb.ReplicatedWrite) error {
     // apliciraj (dirty) lokalno
     if err := s.applyWrite(rw); err != nil {
-        return err
+        log.Printf("ReplicateFromHead: applyWrite failed: op=%s writeID=%d err=%v", rw.Op, rw.WriteId, err)
+        return fmt.Errorf("applyWrite op=%s writeID=%d: %w", rw.Op, rw.WriteId, err)
     }
 
-    // ce ni nasledniko -> ta node je rep (en node v verigi). Oznaci commited in obvesti.
+    log.Printf("Kot glava ustvaril zapis.\n")
+
+    // ce ni naslednikov -> ta node je rep (en node v verigi). Oznaci commited in obvesti.
     if s.state.Successor() == nil {
-        log.Printf("ReplicateFromHead: vozlisce je rep (single-node). Oznacili zapis %d committed.\n", rw.WriteId)
-        rec, err := s.storage.MarkCommitted(rw.WriteId)
-        if err == nil && rec != nil {
-            ev := &pb.MessageEvent{
-                SequenceNumber: int64(rw.WriteId),
-                Op:             pb.OpType_OP_POST,
-                Message: &pb.Message{
-                    Id:        rec.ID,
-                    TopicId:   rec.TopicID,
-                    UserId:    rec.UserID,
-                    Text:      rec.Text,
-                    CreatedAt: timestamppb.New(rec.CreatedAt),
-                    Likes:     rec.Likes,
-                },
-                EventAt: timestamppb.Now(),
+        // ce je pisalna operacija znotraj topic -> poslji narocnikom
+        if isMessageOp(rw.Op) {
+            log.Printf("ReplicateFromHead: vozlisce je rep (single-node). Oznacili zapis %d committed.\n", rw.WriteId)
+            rec, err := s.storage.MarkCommitted(rw.WriteId)
+            if err == nil && rec != nil {
+                ev := &pb.MessageEvent{
+                    SequenceNumber: int64(rw.WriteId),
+                    Op:             pb.OpType_OP_POST,
+                    Message: &pb.Message{
+                        Id:        rec.ID,
+                        TopicId:   rec.TopicID,
+                        UserId:    rec.UserID,
+                        Text:      rec.Text,
+                        CreatedAt: timestamppb.New(rec.CreatedAt),
+                        Likes:     rec.Likes,
+                    },
+                    EventAt: timestamppb.Now(),
+                }
+                s.notifyCommit(ev)
+            } else if err != nil {
+                log.Printf("ReplicateFromHead: MarkCommitted error: %v\n", err)
             }
-            s.notifyCommit(ev)
-        } else if err != nil {
-            log.Printf("ReplicateFromHead: MarkCommitted error: %v\n", err)
         }
 
         // If this node is also head, there may be a pending channel waiting; emulate ack arrival
@@ -313,7 +319,7 @@ func (s *DataNodeServer) ForwardWrite(rw *pb.ReplicatedWrite) error {
 }
 
 // sendAckBackward vzpostavi povezavo z pred in mu pošlje ack
-func (s *DataNodeServer) sendAckBackward(writeID uint64) error {
+func (s *DataNodeServer) sendAckBackward(writeID uint64, op string) error {
 	pred := s.state.Predecessor()
 
     if pred == nil {
@@ -330,7 +336,7 @@ func (s *DataNodeServer) sendAckBackward(writeID uint64) error {
 	client := pb.NewDataNodeClient(conn)
 
 	// repliciraj ack do predhodnika
-	ack := &pb.ReplicatedAck{WriteId: writeID}
+	ack := &pb.ReplicatedAck{WriteId: writeID, Op: op}
 	_, err = client.ReplicateAck(context.Background(), ack)
 
 	return err
@@ -345,8 +351,53 @@ func (s *DataNodeServer) ReplicateWrite(ctx context.Context, req *pb.ReplicatedW
 
 	log.Printf("Prejel sporočilo od predhodnika in ga zapisal v lokalni storage.\n")
 	if s.state.IsTail() {
-		// Rep vrne ACK in obvesti svoje subscriberje o novem dogodku
-		log.Printf("Kot rep: oznacil zapis %d committed in poslal ACK nazaj.\n", req.WriteId)
+        if isMessageOp(req.Op) {
+            // Rep vrne ACK in obvesti svoje subscriberje o novem dogodku
+            log.Printf("Kot rep: oznacil zapis %d committed in poslal ACK nazaj.\n", req.WriteId)
+            rec, err := s.storage.MarkCommitted(req.WriteId)
+            if err == nil && rec != nil {
+                ev := &pb.MessageEvent{
+                    SequenceNumber: int64(req.WriteId),
+                    Op:             pb.OpType_OP_POST,
+                    Message: &pb.Message{
+                        Id:        rec.ID,
+                        TopicId:   rec.TopicID,
+                        UserId:    rec.UserID,
+                        Text:      rec.Text,
+                        CreatedAt: timestamppb.New(rec.CreatedAt),
+                        Likes:     rec.Likes,
+                    },
+                    EventAt: timestamppb.Now(),
+                }
+                s.notifyCommit(ev)
+            } else if err != nil {
+                log.Printf("Rep: MarkCommitted error: %v\n", err)
+            }
+        }
+		s.sendAckBackward(req.WriteId, req.Op)
+		return &emptypb.Empty{}, nil
+	}
+
+	log.Printf("Poslal sporočilo naprej nasledniku.\n")
+	// 2. Pošlji naslednjiku
+	s.ForwardWrite(req)
+	return &emptypb.Empty{}, nil
+}
+
+// isMessageOp je helper, ki pogleda ali grea za pisalno operacijo
+func isMessageOp(op string) bool {
+    switch op {
+    case "PostMessage", "UpdateMessage", "DeleteMessage", "LikeMessage":
+        return true
+    default:
+        return false
+    }
+}
+
+// ReplicateAck je grpc metoda (glej proto), ki pošlje ra predhodniku
+func (s *DataNodeServer) ReplicateAck(ctx context.Context, req *pb.ReplicatedAck) (*emptypb.Empty, error) {
+	// Oznaci kot commited lokalno in obvesti subscriberje
+    if isMessageOp(req.Op) {
         rec, err := s.storage.MarkCommitted(req.WriteId)
         if err == nil && rec != nil {
             ev := &pb.MessageEvent{
@@ -364,40 +415,9 @@ func (s *DataNodeServer) ReplicateWrite(ctx context.Context, req *pb.ReplicatedW
             }
             s.notifyCommit(ev)
         } else if err != nil {
-            log.Printf("Rep: MarkCommitted error: %v\n", err)
+            // not fatal: morda nismo imeli zapisa lokalno (log and continue)
+            log.Printf("warning, ReplicateAck: MarkCommitted error for write %d: %v\n", req.WriteId, err)
         }
-		s.sendAckBackward(req.WriteId)
-		return &emptypb.Empty{}, nil
-	}
-
-	log.Printf("Poslal sporočilo naprej nasledniku.\n")
-	// 2. Pošlji naslednjiku
-	s.ForwardWrite(req)
-	return &emptypb.Empty{}, nil
-}
-
-// ReplicateAck je grpc metoda (glej proto), ki pošlje ra predhodniku
-func (s *DataNodeServer) ReplicateAck(ctx context.Context, req *pb.ReplicatedAck) (*emptypb.Empty, error) {
-	// Oznaci kot commited lokalno in obvesti subscriberje
-    rec, err := s.storage.MarkCommitted(req.WriteId)
-    if err == nil && rec != nil {
-        ev := &pb.MessageEvent{
-            SequenceNumber: int64(req.WriteId),
-            Op:             pb.OpType_OP_POST,
-            Message: &pb.Message{
-                Id:        rec.ID,
-                TopicId:   rec.TopicID,
-                UserId:    rec.UserID,
-                Text:      rec.Text,
-                CreatedAt: timestamppb.New(rec.CreatedAt),
-                Likes:     rec.Likes,
-            },
-            EventAt: timestamppb.Now(),
-        }
-        s.notifyCommit(ev)
-    } else if err != nil {
-        // not fatal: morda nismo imeli zapisa lokalno (log and continue)
-        log.Printf("warning, ReplicateAck: MarkCommitted error for write %d: %v\n", req.WriteId, err)
     }
 
     if s.state.IsHead() {
@@ -414,7 +434,7 @@ func (s *DataNodeServer) ReplicateAck(ctx context.Context, req *pb.ReplicatedAck
 	}
 	log.Printf("Poslal ACK predhodniku.\n")
 	// Forward ack backward
-    if err := s.sendAckBackward(req.WriteId); err != nil {
+    if err := s.sendAckBackward(req.WriteId, req.Op); err != nil {
         log.Printf("ACK forward failed: %v", err)
     }
 	return &emptypb.Empty{}, nil
