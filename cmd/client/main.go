@@ -102,6 +102,7 @@ func main() {
 	}
 	fmt.Println("Posted message, now waiting for committed event...")
 
+
 	// 6) Wait for a single event or timeout
 	select {
 	case ev := <-eventCh:
@@ -112,5 +113,39 @@ func main() {
 	case <-time.After(6 * time.Second):
 		log.Fatalf("timeout waiting for event")
 	}
+
+    // 7) Update the message
+    updateCtx, updateCancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer updateCancel()
+
+    _, err = client.UpdateMessage(updateCtx, &pb.UpdateMessageRequest{
+        TopicId:   topicID,
+        MessageId: msgID,
+        UserId:    userID,
+        Text:      "Edited message text",
+    })
+    if err != nil {
+        log.Fatalf("UpdateMessage failed: %v", err)
+    }
+    fmt.Println("Updated message, now waiting for committed update event...")
+
+    // 8) Wait for committed UPDATE event
+    select {
+    case ev := <-eventCh:
+        fmt.Printf(
+            "Received UPDATE event: seq=%d op=%v message_id=%d topic=%d text=%q\n",
+            ev.SequenceNumber,
+            ev.Op,
+            ev.Message.Id,
+            ev.Message.TopicId,
+            ev.Message.Text,
+        )
+
+    case err := <-errCh:
+        log.Fatalf("stream recv ended: %v", err)
+
+    case <-time.After(10 * time.Second):
+        log.Fatalf("timeout waiting for update event")
+    }
 }
    

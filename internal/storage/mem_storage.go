@@ -4,7 +4,7 @@ import (
     "errors"
     "sync"
     "time"  
-    "log"
+//    "log"
 )
 
 type MemStorage struct {

@@ -209,10 +209,10 @@ func (s *DataNodeServer) applyWrite(rw *pb.ReplicatedWrite) error {
             // CRAQ verzija UpdateMessage      
             _, err := s.storage.UpdateMessageWithWriteID(
                 req.TopicId,
-                req.MessageId,
                 req.UserId,
+                req.MessageId,
                 req.Text,
-                rw.WriteId
+                rw.WriteId, 
             )
             return err
 
