@@ -21,7 +21,8 @@ type NodeState struct {
 	self        *pb.NodeInfo
 	head        *pb.NodeInfo
 	tail        *pb.NodeInfo
-	chainVersion     uint64
+	nodes[]     *pb.NodeInfo
+    chainVersion     uint64
     nextWriteID   uint64
 }
 
@@ -39,7 +40,31 @@ func (ns *NodeState) UpdateConfig(cfg *pb.ChainConfig) {
 	ns.head = cfg.Head
 	ns.tail = cfg.Tail
 	ns.chainVersion = cfg.ChainVersion
+
+    if len(cfg.Nodes) > 0 {
+		ns.nodes = make([]*pb.NodeInfo, len(cfg.Nodes))
+		copy(ns.nodes, cfg.Nodes)
+	}
 }
+
+// NodesSnapshot vrne kopijo vseh vozlišč v verigi
+func (ns *NodeState) NodesSnapshot() []*pb.NodeInfo {
+	ns.mu.RLock()
+	defer ns.mu.RUnlock()
+
+	if len(ns.nodes) == 0 {
+		return nil
+	}
+
+	nodes := make([]*pb.NodeInfo, len(ns.nodes))
+	copy(nodes, ns.nodes)
+	return nodes
+}
+
+func (s *DataNodeServer) NodesSnapshot() []*pb.NodeInfo {
+	return s.state.NodesSnapshot()
+}
+
 
 // Vrne nodeinfo vozlisca samega, ki pripada stanju ns
 func (ns *NodeState) Self() *pb.NodeInfo {
@@ -55,11 +80,19 @@ func (ns *NodeState) IsHead() bool {
 	return ns.self != nil && ns.head != nil && ns.self.NodeId == ns.head.NodeId
 }
 
+func (s *DataNodeServer) IsHead() bool {
+	return s.state.IsHead()
+}
+
 // IsTail preveri ali je vozlisce rep
 func (ns *NodeState) IsTail() bool {
 	ns.mu.RLock()
 	defer ns.mu.RUnlock()
 	return ns.self != nil && ns.tail != nil && ns.self.NodeId == ns.tail.NodeId
+}
+
+func (s *DataNodeServer) IsTail() bool {
+	return s.state.IsTail()
 }
 
 // GetState vrne trenutni config state
@@ -101,6 +134,8 @@ type DataNodeServer struct {
     // se poklice ko je write commitan na tem vozliscu (callbacks v bistvu)
     commitListenersMu sync.RWMutex
     commitListeners []func(ev *pb.MessageEvent)
+
+    
 }
 
 // NewDataNodeServer je konstruktor, ki sprejme NodeState in ustvari abstrakcijo streznika za verizno replikacijo

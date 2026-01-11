@@ -9,10 +9,9 @@ import (
 
 	pb "github.com/ab76015/razpravljalnica/api/pb"
 	"google.golang.org/grpc"
-	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-var serverAddr = flag.String("addr", "localhost:50051", "The data node address (host:port)")
+var serverAddr = flag.String("addr", "localhost:60051", "The data node address (host:port)")
 
 func main() {
 	flag.Parse()
@@ -48,7 +47,7 @@ func main() {
 		UserId:  userID,
 		TopicId: []int64{topicID},
 	}
-	subResp, err := client.GetSubcscriptionNode(context.Background(), subReq)
+	subResp, err := client.GetSubscriptionNode(context.Background(), subReq)
 	if err != nil {
 		log.Fatalf("GetSubscriptionNode failed: %v", err)
 	}

@@ -42,6 +42,7 @@ func buildConfigForIndex(idx int, state *ChainState) *pb.ChainConfig {
         Tail:        nodes[len(nodes)-1],
         Predecessor: pred,
         Successor:   succ,
+        Nodes: nodes,
     }
 }
 

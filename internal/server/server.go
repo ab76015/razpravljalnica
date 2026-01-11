@@ -328,7 +328,7 @@ func (s *Server) GetSubscriptionNode(ctx context.Context,req *pb.SubscriptionNod
         return nil, status.Error(codes.FailedPrecondition, "not head")
     }
     // izberi konkreten subscribe node
-    nodes := s.replication.AllNodes()
+    nodes := s.replication.NodesSnapshot()
     node := subscription.SelectNode(nodes, req.UserId)
     // ustvari subscribtion grant
     grant := &subscription.Grant{
