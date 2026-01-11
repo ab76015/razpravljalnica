@@ -67,11 +67,12 @@ func (m *MemStorage) CreateTopic(name string) (*Topic, error) {
     m.nextTopicID++
     return t, nil
 }
+
 // CRAQ, nastavi msg kot 'dirty' sprva
 func (m *MemStorage) PostMessageWithWriteID(topicID, userID int64, text string, writeID uint64) (*Message, error) {
     m.mu.Lock()
     defer m.mu.Unlock()
-
+    /*
     log.Printf(
         "[DEBUG][PostMessage] topicID=%d userID=%d\n",
         topicID, userID,
@@ -87,8 +88,7 @@ func (m *MemStorage) PostMessageWithWriteID(topicID, userID int64, text string, 
     log.Printf("[DEBUG][PostMessage] users in storage:")
     for id, u := range m.users {
         log.Printf("  user id=%d name=%q", id, u.Name)
-    }
-
+    }*/
 
     if _, ok := m.topics[topicID]; !ok {
         return nil, errors.New("topic not found")
@@ -113,6 +113,7 @@ func (m *MemStorage) PostMessageWithWriteID(topicID, userID int64, text string, 
     return msg, nil
 }
 
+/*
 func (m *MemStorage) PostMessage(topicID, userID int64, text string) (*Message, error) {
     m.mu.Lock()
     defer m.mu.Unlock()
@@ -135,8 +136,33 @@ func (m *MemStorage) PostMessage(topicID, userID int64, text string) (*Message, 
     m.messages[m.nextMsgID] = msg
     m.nextMsgID++
     return msg, nil
+}*/
+
+// CRAQ verzija
+func (m *MemStorage) UpdateMessageWithWriteID(topicID, userID, msgID int64, text string, writeID uint64) (*Message, error) {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+
+    msg, ok := m.messages[msgID];
+    if !ok {
+        return nil, errors.New("message not found")
+    }   
+    if msg.TopicID != topicID {
+        return nil, errors.New("message not in topic")
+    }   
+    if msg.UserID != userID {
+        return nil, errors.New("incorrect user id")
+    }   
+
+    msg.Text = text
+    // craq
+    m.msgWrite[msgID] = writeID
+    m.writes[writeID] = msg
+    m.committed[writeID] = false
+    return msg, nil 
 }
 
+/*
 func (m *MemStorage) UpdateMessage(topicID, userID, msgID int64, text string) (*Message, error) {
     m.mu.Lock()
     defer m.mu.Unlock()
@@ -154,7 +180,7 @@ func (m *MemStorage) UpdateMessage(topicID, userID, msgID int64, text string) (*
 
     msg.Text = text
     return msg, nil
-}
+}*/
 
 func (m *MemStorage) DeleteMessage(topicID, userID, msgID int64) error {
     m.mu.Lock()

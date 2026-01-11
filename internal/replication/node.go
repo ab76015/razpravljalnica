@@ -167,20 +167,6 @@ func (s *DataNodeServer) ApplyWrite(rw *pb.ReplicatedWrite) error {
 
 func (s *DataNodeServer) applyWrite(rw *pb.ReplicatedWrite) error {
 	switch rw.Op {
-        case "PostMessage":
-            var req pb.PostMessageRequest
-            if err := proto.Unmarshal(rw.Payload, &req); err != nil {
-                return err
-            }
-            // CRAQ verzija PostMessage; sprva dirty writeID
-            _, err := s.storage.PostMessageWithWriteID(
-                req.TopicId,
-                req.UserId,
-                req.Text,
-                rw.WriteId,
-            )
-            return err
-
         case "CreateUser":
             var req pb.CreateUserRequest
             if err := proto.Unmarshal(rw.Payload, &req); err != nil {
@@ -201,17 +187,32 @@ func (s *DataNodeServer) applyWrite(rw *pb.ReplicatedWrite) error {
             )
             return err
 
+        case "PostMessage":
+            var req pb.PostMessageRequest
+            if err := proto.Unmarshal(rw.Payload, &req); err != nil {
+                return err
+            }
+            // CRAQ verzija PostMessage; sprva dirty writeID
+            _, err := s.storage.PostMessageWithWriteID(
+                req.TopicId,
+                req.UserId,
+                req.Text,
+                rw.WriteId,
+            )
+            return err
+
         case "UpdateMessage":
             var req pb.UpdateMessageRequest
             if err := proto.Unmarshal(rw.Payload, &req); err != nil {
                 return err
             }
-            
-            _, err := s.storage.UpdateMessage(
+            // CRAQ verzija UpdateMessage      
+            _, err := s.storage.UpdateMessageWithWriteID(
                 req.TopicId,
                 req.MessageId,
                 req.UserId,
                 req.Text,
+                rw.WriteId
             )
             return err
 
