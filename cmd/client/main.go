@@ -104,8 +104,10 @@ func main() {
 
 
 	// 6) Wait for a single event or timeout
+    var msgID int64
 	select {
 	case ev := <-eventCh:
+        msgID = ev.Message.Id
 		fmt.Printf("Received event: seq=%d op=%v message_id=%d topic=%d text=%q\n",
 			ev.SequenceNumber, ev.Op, ev.Message.Id, ev.Message.TopicId, ev.Message.Text)
 	case err := <-errCh:
@@ -129,7 +131,7 @@ func main() {
     }
     fmt.Println("Updated message, now waiting for committed update event...")
 
-    // 8) Wait for committed UPDATE event
+    // 8) Wait for commited UPDATE event
     select {
     case ev := <-eventCh:
         fmt.Printf(
