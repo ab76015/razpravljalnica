@@ -16,7 +16,7 @@ type MemStorage struct {
     nextUserID int64
     nextTopicID int64
     nextMsgID int64
-
+    deleted map[int64]uint64
     // CRAQ
     // writeID -> message pointer
     writes map[uint64]*Message
@@ -35,6 +35,7 @@ func NewMemStorage() *MemStorage {
         nextUserID:  0,
         nextTopicID: 0,
         nextMsgID:   0,
+        deleted: make(map[int64]uint64), 
         // CRAQ
         writes:    make(map[uint64]*Message),
         msgWrite:  make(map[int64]uint64),
@@ -96,6 +97,10 @@ func (m *MemStorage) PostMessageWithWriteID(topicID, userID int64, text string, 
     if _, ok := m.users[userID]; !ok {
         return nil, errors.New("user not found")
     }
+    // ze bil apliciran, idempotenca
+    if _, exists := m.writes[writeID]; exists {
+        return msg, nil
+    }
 
     msg := &Message{
         ID:        m.nextMsgID,
@@ -153,6 +158,11 @@ func (m *MemStorage) UpdateMessageWithWriteID(topicID, userID, msgID int64, text
     if msg.UserID != userID {
         return nil, errors.New("incorrect user id")
     }   
+    
+    // ze bil apliciran, idempotenca
+    if _, exists := m.writes[writeID]; exists {
+        return msg, nil
+    }
 
     msg.Text = text
     // craq
@@ -182,6 +192,44 @@ func (m *MemStorage) UpdateMessage(topicID, userID, msgID int64, text string) (*
     return msg, nil
 }
 
+// CRAQ
+func (m *MemStorage) DeleteMessageWithWriteID(topicID, userID, msgID int64, writeID uint64) error {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+
+    msg, ok := m.messages[msgID];
+    if !ok {
+        return errors.New("message not found")
+    }
+    if msg.TopicID != topicID {
+        return errors.New("message not in topic")
+    }
+    if msg.UserID != userID {
+        return errors.New("incorrect user id")
+    }
+    
+    // ze bil apliciran (idempotenca)
+    if _, exists := m.writes[writeID]; exists {
+        return nil
+    }
+    
+    /*zbrisemo se vse like s tem msgID
+    for like := range m.likes {
+        if like.MessageID == msgID {
+            delete(m.likes, like)
+        }
+    }*/
+
+    delete(m.messages, msgID)
+    // craq
+    m.msgWrite[msgID] = writeID
+    m.writes[writeID] = msg 
+    m.committed[writeID] = false
+    //tombstone map, da lazje prepoznamo delete ob commit casu
+    m.deleted[msgID] = writeID
+    return nil
+}
+// deprecated
 func (m *MemStorage) DeleteMessage(topicID, userID, msgID int64) error {
     m.mu.Lock()
     defer m.mu.Unlock()
@@ -208,6 +256,47 @@ func (m *MemStorage) DeleteMessage(topicID, userID, msgID int64) error {
     return nil
 }
 
+// CRAQ
+func (m* MemStorage) LikeMessageWithWriteID(topicID, msgID, userID int64, writeID uint64) (*Message, error) {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+
+    if _, ok := m.topics[topicID]; !ok {
+        return nil, errors.New("topic not found")
+    }
+    if _, ok := m.users[userID]; !ok {
+        return nil, errors.New("user not found")
+    }
+
+    msg, ok := m.messages[msgID];
+    if !ok {
+        return nil, errors.New("message not found")
+    }
+    if msg.TopicID != topicID {
+        return nil, errors.New("message not in topic")
+    }
+
+    like := Like{
+        TopicID:     topicID,
+        MessageID:   msgID,
+        UserID:      userID,
+    }
+    // Ce je tocno ta writeID ze bil apliciran, vrni trenutno stanje (idempotentnost)
+    if _, exists := m.writes[writeID]; exists {
+        return msg, nil
+    }
+
+    m.likes[like] = struct{}{}
+    msg.Likes++
+    //craq
+    m.msgWrite[msgID] = writeID
+    m.writes[writeID] = msg
+    m.committed[writeID] = false
+
+    return msg, nil
+}
+
+// deprecated
 func (m* MemStorage) LikeMessage(topicID, msgID, userID int64) (*Message, error) {
     m.mu.Lock()
     defer m.mu.Unlock()
@@ -290,6 +379,22 @@ func (m *MemStorage) MarkCommitted(writeID uint64) (*Message, error) {
     if !ok {
         return nil, errors.New("write id not found")
     }
+
+    msgID := msg.ID
+    // Ce je ta write v oznacen kot tombstone v deleted, ga dokoncno odstrani
+    if delW, isDel := m.deleted[msgID]; isDel && delW == writeID {
+        // izbrisi tudi vse njegove like
+        for like := range m.likes {
+            if like.MessageID == msgID {
+                delete(m.likes, like)
+            }
+        }
+        // dokoncno izbrisi
+        delete(m.messages, msgID)
+        delete(m.deleted, msgID)
+        delete(m.msgWrite, msgID)
+    }
+
     m.committed[writeID] = true
     return msg, nil
 }
