@@ -129,8 +129,7 @@ type DataNodeServer struct {
 	state   *NodeState
     storage storage.Storage
 	pending map[uint64]chan struct{}
-	mu      sync.Mutex
-    
+	mu      sync.Mutex    
     // se poklice ko je write commitan na tem vozliscu (callbacks v bistvu)
     commitListenersMu sync.RWMutex
     commitListeners []func(ev *pb.MessageEvent)
@@ -248,6 +247,22 @@ func (s *DataNodeServer) applyWrite(rw *pb.ReplicatedWrite) error {
             return fmt.Errorf("unknown op %s", rw.Op)
 	}
 }
+// OpType helper
+func opTypeFromWrite(op string) pb.OpType {
+    switch op {
+    case "PostMessage":
+        return pb.OpType_OP_POST
+    case "UpdateMessage":
+        return pb.OpType_OP_UPDATE
+    case "LikeMessage":
+        return pb.OpType_OP_LIKE
+    case "DeleteMessage":
+        return pb.OpType_OP_DELETE
+    default:
+        return pb.OpType_OP_POST
+    }
+}
+
 
 // ReplicateFromHead LOCAL APPLY + FORWARD mora biti ena operacija
 func (s *DataNodeServer) ReplicateFromHead(rw *pb.ReplicatedWrite) error {
@@ -268,7 +283,7 @@ func (s *DataNodeServer) ReplicateFromHead(rw *pb.ReplicatedWrite) error {
             if err == nil && rec != nil {
                 ev := &pb.MessageEvent{
                     SequenceNumber: int64(rw.WriteId),
-                    Op:             pb.OpType_OP_POST,
+                    Op:             opTypeFromWrite(rw.Op),
                     Message: &pb.Message{
                         Id:        rec.ID,
                         TopicId:   rec.TopicID,
@@ -346,6 +361,16 @@ func (s *DataNodeServer) sendAckBackward(writeID uint64, op string) error {
 	return err
 }
 
+// isMessageOp je helper, ki pogleda ali gre za pisalno operacijo
+func isMessageOp(op string) bool {
+    switch op {
+    case "PostMessage", "UpdateMessage", "DeleteMessage", "LikeMessage":
+        return true
+    default:
+        return false
+    }
+}
+
 // ReplicateWrite je grpc metoda (glej proto), ki pošlje rw nasledniku
 func (s *DataNodeServer) ReplicateWrite(ctx context.Context, req *pb.ReplicatedWrite) (*emptypb.Empty, error) {
 	// 1. apliciraj lokalno
@@ -362,7 +387,7 @@ func (s *DataNodeServer) ReplicateWrite(ctx context.Context, req *pb.ReplicatedW
             if err == nil && rec != nil {
                 ev := &pb.MessageEvent{
                     SequenceNumber: int64(req.WriteId),
-                    Op:             pb.OpType_OP_POST,
+                    Op:             opTypeFromWrite(req.Op),
                     Message: &pb.Message{
                         Id:        rec.ID,
                         TopicId:   rec.TopicID,
@@ -388,16 +413,6 @@ func (s *DataNodeServer) ReplicateWrite(ctx context.Context, req *pb.ReplicatedW
 	return &emptypb.Empty{}, nil
 }
 
-// isMessageOp je helper, ki pogleda ali grea za pisalno operacijo
-func isMessageOp(op string) bool {
-    switch op {
-    case "PostMessage", "UpdateMessage", "DeleteMessage", "LikeMessage":
-        return true
-    default:
-        return false
-    }
-}
-
 // ReplicateAck je grpc metoda (glej proto), ki pošlje ra predhodniku
 func (s *DataNodeServer) ReplicateAck(ctx context.Context, req *pb.ReplicatedAck) (*emptypb.Empty, error) {
 	// Oznaci kot commited lokalno in obvesti subscriberje
@@ -406,7 +421,7 @@ func (s *DataNodeServer) ReplicateAck(ctx context.Context, req *pb.ReplicatedAck
         if err == nil && rec != nil {
             ev := &pb.MessageEvent{
                 SequenceNumber: int64(req.WriteId),
-                Op:             pb.OpType_OP_POST,
+                Op:             opTypeFromWrite(req.Op),
                 Message: &pb.Message{
                     Id:        rec.ID,
                     TopicId:   rec.TopicID,
