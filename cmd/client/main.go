@@ -87,11 +87,13 @@ func main() {
 			eventCh <- ev
 		}
 	}()
+    var msgID int64
+
     // 5) Post a message
     postCtx, postCancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer postCancel()
 
-    postResp, err := client.PostMessage(postCtx, &pb.PostMessageRequest{
+    _, err = client.PostMessage(postCtx, &pb.PostMessageRequest{
         TopicId: topicID,
         UserId:  userID,
         Text:    "Hello from client, testing subscription",
@@ -99,11 +101,26 @@ func main() {
     if err != nil {
         log.Fatalf("PostMessage failed: %v", err)
     }
-    msgID := postResp.MessageId
-    fmt.Printf("Posted message id=%d, waiting for committed event...\n", msgID)
+    fmt.Println("Posted message, waiting for committed POST event...")
 
-    // expect OP_POST committed event here
+    select {
+    case ev := <-eventCh:
+        fmt.Printf(
+            "Received POST event: seq=%d op=%v message_id=%d topic=%d text=%q\n",
+            ev.SequenceNumber,
+            ev.Op,
+            ev.Message.Id,
+            ev.Message.TopicId,
+            ev.Message.Text,
+        )
+        msgID = ev.Message.Id
 
+    case err := <-errCh:
+        log.Fatalf("stream recv ended: %v", err)
+
+    case <-time.After(10 * time.Second):
+        log.Fatalf("timeout waiting for POST event")
+    }
 
     // 6) Update the message
     updateCtx, updateCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -118,10 +135,25 @@ func main() {
     if err != nil {
         log.Fatalf("UpdateMessage failed: %v", err)
     }
-    fmt.Println("Updated message, waiting for committed update event...")
+    fmt.Println("Updated message, waiting for committed UPDATE event...")
 
-    // expect OP_UPDATE committed event here
+    select {
+    case ev := <-eventCh:
+        fmt.Printf(
+            "Received UPDATE event: seq=%d op=%v message_id=%d topic=%d text=%q\n",
+            ev.SequenceNumber,
+            ev.Op,
+            ev.Message.Id,
+            ev.Message.TopicId,
+            ev.Message.Text,
+        )
 
+    case err := <-errCh:
+        log.Fatalf("stream recv ended: %v", err)
+
+    case <-time.After(10 * time.Second):
+        log.Fatalf("timeout waiting for UPDATE event")
+    }
 
     // 7) Like the message
     likeCtx, likeCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -135,10 +167,25 @@ func main() {
     if err != nil {
         log.Fatalf("LikeMessage failed: %v", err)
     }
-    fmt.Println("Liked message, waiting for committed like event...")
+    fmt.Println("Liked message, waiting for committed LIKE event...")
 
-    // expect OP_LIKE committed event here
+    select {
+    case ev := <-eventCh:
+        fmt.Printf(
+            "Received LIKE event: seq=%d op=%v message_id=%d topic=%d likes=%d\n",
+            ev.SequenceNumber,
+            ev.Op,
+            ev.Message.Id,
+            ev.Message.TopicId,
+            ev.Message.Likes,
+        )
 
+    case err := <-errCh:
+        log.Fatalf("stream recv ended: %v", err)
+
+    case <-time.After(10 * time.Second):
+        log.Fatalf("timeout waiting for LIKE event")
+    }
 
     // 8) Delete the message
     deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -152,9 +199,24 @@ func main() {
     if err != nil {
         log.Fatalf("DeleteMessage failed: %v", err)
     }
-    fmt.Println("Deleted message, waiting for committed delete event...")
+    fmt.Println("Deleted message, waiting for committed DELETE event...")
 
-    // expect OP_DELETE committed event here
+    select {
+    case ev := <-eventCh:
+        fmt.Printf(
+            "Received DELETE event: seq=%d op=%v message_id=%d topic=%d\n",
+            ev.SequenceNumber,
+            ev.Op,
+            ev.Message.Id,
+            ev.Message.TopicId,
+        )
+
+    case err := <-errCh:
+        log.Fatalf("stream recv ended: %v", err)
+
+    case <-time.After(10 * time.Second):
+        log.Fatalf("timeout waiting for DELETE event")
+    }
 
 }
    

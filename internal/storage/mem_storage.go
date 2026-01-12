@@ -99,7 +99,7 @@ func (m *MemStorage) PostMessageWithWriteID(topicID, userID int64, text string, 
     }
     // ze bil apliciran, idempotenca
     if _, exists := m.writes[writeID]; exists {
-        return msg, nil
+        return m.writes[writeID], nil
     }
 
     msg := &Message{
@@ -193,24 +193,24 @@ func (m *MemStorage) UpdateMessage(topicID, userID, msgID int64, text string) (*
 }
 
 // CRAQ
-func (m *MemStorage) DeleteMessageWithWriteID(topicID, userID, msgID int64, writeID uint64) error {
+func (m *MemStorage) DeleteMessageWithWriteID(topicID, userID, msgID int64, writeID uint64) (*Message, error) {
     m.mu.Lock()
     defer m.mu.Unlock()
 
     msg, ok := m.messages[msgID];
     if !ok {
-        return errors.New("message not found")
+        return msg, errors.New("message not found")
     }
     if msg.TopicID != topicID {
-        return errors.New("message not in topic")
+        return msg, errors.New("message not in topic")
     }
     if msg.UserID != userID {
-        return errors.New("incorrect user id")
+        return msg, errors.New("incorrect user id")
     }
     
     // ze bil apliciran (idempotenca)
     if _, exists := m.writes[writeID]; exists {
-        return nil
+        return msg, nil
     }
     
     /*zbrisemo se vse like s tem msgID
@@ -227,7 +227,7 @@ func (m *MemStorage) DeleteMessageWithWriteID(topicID, userID, msgID int64, writ
     m.committed[writeID] = false
     //tombstone map, da lazje prepoznamo delete ob commit casu
     m.deleted[msgID] = writeID
-    return nil
+    return msg, nil
 }
 // deprecated
 func (m *MemStorage) DeleteMessage(topicID, userID, msgID int64) error {
