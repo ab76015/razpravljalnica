@@ -23,6 +23,8 @@ const (
 	DataNode_UpdateChainConfig_FullMethodName = "/razpravljalnica.DataNode/UpdateChainConfig"
 	DataNode_ReplicateWrite_FullMethodName    = "/razpravljalnica.DataNode/ReplicateWrite"
 	DataNode_ReplicateAck_FullMethodName      = "/razpravljalnica.DataNode/ReplicateAck"
+	DataNode_Heartbeat_FullMethodName         = "/razpravljalnica.DataNode/Heartbeat"
+	DataNode_FetchWrites_FullMethodName       = "/razpravljalnica.DataNode/FetchWrites"
 )
 
 // DataNodeClient is the client API for DataNode service.
@@ -38,6 +40,10 @@ type DataNodeClient interface {
 	// Data plane replication write RPC
 	ReplicateWrite(ctx context.Context, in *ReplicatedWrite, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	ReplicateAck(ctx context.Context, in *ReplicatedAck, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// Control plane heartbeat / health check
+	Heartbeat(ctx context.Context, in *HeartbeatReq, opts ...grpc.CallOption) (*HeartbeatResp, error)
+	// Used for repair / catch-up when a node joins or a node fails
+	FetchWrites(ctx context.Context, in *FetchWritesReq, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ReplicatedWrite], error)
 }
 
 type dataNodeClient struct {
@@ -78,6 +84,35 @@ func (c *dataNodeClient) ReplicateAck(ctx context.Context, in *ReplicatedAck, op
 	return out, nil
 }
 
+func (c *dataNodeClient) Heartbeat(ctx context.Context, in *HeartbeatReq, opts ...grpc.CallOption) (*HeartbeatResp, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HeartbeatResp)
+	err := c.cc.Invoke(ctx, DataNode_Heartbeat_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dataNodeClient) FetchWrites(ctx context.Context, in *FetchWritesReq, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ReplicatedWrite], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &DataNode_ServiceDesc.Streams[0], DataNode_FetchWrites_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[FetchWritesReq, ReplicatedWrite]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type DataNode_FetchWritesClient = grpc.ServerStreamingClient[ReplicatedWrite]
+
 // DataNodeServer is the server API for DataNode service.
 // All implementations must embed UnimplementedDataNodeServer
 // for forward compatibility.
@@ -91,6 +126,10 @@ type DataNodeServer interface {
 	// Data plane replication write RPC
 	ReplicateWrite(context.Context, *ReplicatedWrite) (*emptypb.Empty, error)
 	ReplicateAck(context.Context, *ReplicatedAck) (*emptypb.Empty, error)
+	// Control plane heartbeat / health check
+	Heartbeat(context.Context, *HeartbeatReq) (*HeartbeatResp, error)
+	// Used for repair / catch-up when a node joins or a node fails
+	FetchWrites(*FetchWritesReq, grpc.ServerStreamingServer[ReplicatedWrite]) error
 	mustEmbedUnimplementedDataNodeServer()
 }
 
@@ -109,6 +148,12 @@ func (UnimplementedDataNodeServer) ReplicateWrite(context.Context, *ReplicatedWr
 }
 func (UnimplementedDataNodeServer) ReplicateAck(context.Context, *ReplicatedAck) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReplicateAck not implemented")
+}
+func (UnimplementedDataNodeServer) Heartbeat(context.Context, *HeartbeatReq) (*HeartbeatResp, error) {
+	return nil, status.Error(codes.Unimplemented, "method Heartbeat not implemented")
+}
+func (UnimplementedDataNodeServer) FetchWrites(*FetchWritesReq, grpc.ServerStreamingServer[ReplicatedWrite]) error {
+	return status.Error(codes.Unimplemented, "method FetchWrites not implemented")
 }
 func (UnimplementedDataNodeServer) mustEmbedUnimplementedDataNodeServer() {}
 func (UnimplementedDataNodeServer) testEmbeddedByValue()                  {}
@@ -185,6 +230,35 @@ func _DataNode_ReplicateAck_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DataNode_Heartbeat_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HeartbeatReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DataNodeServer).Heartbeat(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DataNode_Heartbeat_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DataNodeServer).Heartbeat(ctx, req.(*HeartbeatReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DataNode_FetchWrites_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(FetchWritesReq)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(DataNodeServer).FetchWrites(m, &grpc.GenericServerStream[FetchWritesReq, ReplicatedWrite]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type DataNode_FetchWritesServer = grpc.ServerStreamingServer[ReplicatedWrite]
+
 // DataNode_ServiceDesc is the grpc.ServiceDesc for DataNode service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -204,8 +278,18 @@ var DataNode_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "ReplicateAck",
 			Handler:    _DataNode_ReplicateAck_Handler,
 		},
+		{
+			MethodName: "Heartbeat",
+			Handler:    _DataNode_Heartbeat_Handler,
+		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "FetchWrites",
+			Handler:       _DataNode_FetchWrites_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "razpravljalnica.proto",
 }
 

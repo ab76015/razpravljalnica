@@ -54,6 +54,35 @@ func (cs *ChainState) AddNode(node *pb.NodeInfo) int {
     return len(cs.nodes) - 1
 }
 
+// RemoveNode odstrani vozlisce in vrne prejsnji ix oz. -1 ce ne najde vozlisca s podanim nodeID
+func (cs *ChainState) RemoveNode(nodeID string) int {
+    cs.mu.Lock()
+    defer cs.mu.Unlock()
+    for i, n := range cs.nodes {
+        if n.NodeId == nodeID {
+            // remove index i
+            cs.nodes = append(cs.nodes[:i], cs.nodes[i+1:]...)
+            cs.version++
+            log.Printf("[STATE-UPDATE] removed node_id=%s\n", nodeID)
+            return i
+        }
+    }
+    return -1
+}
+
+// FindIndex poisce ix vozlisca s podanim nodeID
+func (cs *ChainState) FindIndex(nodeID string) int {
+    cs.mu.RLock()
+    defer cs.mu.RUnlock()
+    for i, n := range cs.nodes {
+        if n.NodeId == nodeID {
+            return i
+        }
+    }
+    return -1
+}
+
+
 /*
  326 type NodeInfo struct {
  327     state         protoimpl.MessageState `protogen:"open.v1"`

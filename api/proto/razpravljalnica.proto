@@ -57,6 +57,24 @@ service DataNode {
   // Data plane replication write RPC
   rpc ReplicateWrite(ReplicatedWrite) returns (google.protobuf.Empty);
   rpc ReplicateAck(ReplicatedAck) returns (google.protobuf.Empty);
+  
+   // Control plane heartbeat / health check
+  rpc Heartbeat(HeartbeatReq) returns (HeartbeatResp);
+  // Used for repair / catch-up when a node joins or a node fails
+  rpc FetchWrites(FetchWritesReq) returns (stream ReplicatedWrite);
+}
+
+message HeartbeatReq {}
+
+message HeartbeatResp {
+  uint64 last_committed_write = 1;
+  string node_id = 2;
+  uint64 chain_version = 3;
+}
+
+message FetchWritesReq {
+  uint64 from_write_id = 1; // inclusive
+  uint64 to_write_id = 2;   // exclusive, 0 = until latest
 }
 
 message ReplicatedWrite {
@@ -195,4 +213,6 @@ message ChainConfig {
   NodeInfo successor = 5;
   repeated NodeInfo nodes = 6;
 }
+
+
 

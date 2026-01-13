@@ -133,11 +133,22 @@ type DataNodeServer struct {
     // se poklice ko je write commitan na tem vozliscu (callbacks v bistvu)
     commitListenersMu sync.RWMutex
     commitListeners []func(ev *pb.MessageEvent)
+    // za updatat nodeStatus (resync) v master
+    lastCommittedMu sync.RWMutex
+    lastCommitted  uint64
+    // za fetchwrites
+    storedWrites map[uint64]*pb.ReplicatedWrite
 }
 
 // NewDataNodeServer je konstruktor, ki sprejme NodeState in ustvari abstrakcijo streznika za verizno replikacijo
 func NewDataNodeServer(state *NodeState, st storage.Storage) *DataNodeServer {
-	return &DataNodeServer{state: state, storage: st, pending: make(map[uint64]chan struct{}), commitListeners: make([]func(ev *pb.MessageEvent), 0)}
+	return &DataNodeServer{
+        state: state, 
+        storage: st, 
+        pending: make(map[uint64]chan struct{}), 
+        commitListeners: make([]func(ev *pb.MessageEvent), 0), 
+        storedWrites: make(map[uint64]*pb.ReplicatedWrite),
+    }
 }
 
 // State vrne je getter za kazalec na stanje (NodeState) trenutnega DataNodeServer strežnika
@@ -271,6 +282,9 @@ func (s *DataNodeServer) ReplicateFromHead(rw *pb.ReplicatedWrite) error {
         log.Printf("ReplicateFromHead: applyWrite failed: op=%s writeID=%d err=%v", rw.Op, rw.WriteId, err)
         return fmt.Errorf("applyWrite op=%s writeID=%d: %w", rw.Op, rw.WriteId, err)
     }
+    s.mu.Lock()
+    s.storedWrites[rw.WriteId] = rw
+    s.mu.Unlock()
 
     log.Printf("Kot glava ustvaril zapis.\n")
 
@@ -280,6 +294,11 @@ func (s *DataNodeServer) ReplicateFromHead(rw *pb.ReplicatedWrite) error {
         if isMessageOp(rw.Op) {
             log.Printf("ReplicateFromHead: vozlisce je rep (single-node). Oznacili zapis %d committed.\n", rw.WriteId)
             rec, err := s.storage.MarkCommitted(rw.WriteId)
+            s.lastCommittedMu.Lock()
+            if rw.WriteId > s.lastCommitted {
+                s.lastCommitted = rw.WriteId
+            }
+            s.lastCommittedMu.Unlock()
             if err == nil && rec != nil {
                 ev := &pb.MessageEvent{
                     SequenceNumber: int64(rw.WriteId),
@@ -377,6 +396,9 @@ func (s *DataNodeServer) ReplicateWrite(ctx context.Context, req *pb.ReplicatedW
 	if err := s.applyWrite(req); err != nil {
 		return nil, err
 	}
+    s.mu.Lock()
+    s.storedWrites[req.WriteId] = req
+    s.mu.Unlock()
 
 	log.Printf("Prejel sporočilo od predhodnika in ga zapisal v lokalni storage.\n")
 	if s.state.IsTail() {
@@ -384,6 +406,11 @@ func (s *DataNodeServer) ReplicateWrite(ctx context.Context, req *pb.ReplicatedW
             // Rep vrne ACK in obvesti svoje subscriberje o novem dogodku
             log.Printf("Kot rep: oznacil zapis %d committed in poslal ACK nazaj.\n", req.WriteId)
             rec, err := s.storage.MarkCommitted(req.WriteId)
+            s.lastCommittedMu.Lock()
+            if req.WriteId > s.lastCommitted {
+                s.lastCommitted = req.WriteId
+            }
+            s.lastCommittedMu.Unlock()
             if err == nil && rec != nil {
                 ev := &pb.MessageEvent{
                     SequenceNumber: int64(req.WriteId),
@@ -418,6 +445,11 @@ func (s *DataNodeServer) ReplicateAck(ctx context.Context, req *pb.ReplicatedAck
 	// Oznaci kot commited lokalno in obvesti subscriberje
     if isMessageOp(req.Op) {
         rec, err := s.storage.MarkCommitted(req.WriteId)
+        s.lastCommittedMu.Lock()
+        if req.WriteId > s.lastCommitted {
+            s.lastCommitted = req.WriteId
+        }
+        s.lastCommittedMu.Unlock()
         if err == nil && rec != nil {
             ev := &pb.MessageEvent{
                 SequenceNumber: int64(req.WriteId),
@@ -508,5 +540,50 @@ func (s *DataNodeServer) notifyCommit(ev *pb.MessageEvent) {
             f(ev)
         }(fn)
     }
+}
+
+// implementacija heartbeat, vrne lastcommited msg na node in nodeid ter chainversion
+func (s *DataNodeServer) Heartbeat(ctx context.Context, _ *pb.HeartbeatReq) (*pb.HeartbeatResp, error) {
+    s.lastCommittedMu.RLock()
+    lc := s.lastCommitted
+    s.lastCommittedMu.RUnlock()
+    return &pb.HeartbeatResp{
+        LastCommittedWrite: lc,
+        NodeId: s.state.Self().NodeId,
+        ChainVersion: s.state.ChainVersion(),
+    }, nil
+}
+
+// FetchWrites vrne sporocila od from do to, masterju
+func (s *DataNodeServer) FetchWrites(req *pb.FetchWritesReq, stream pb.DataNode_FetchWritesServer) error {
+    from := req.FromWriteId
+    to := req.ToWriteId // 0 means until latest
+    // iterate over some storage map that keeps writeID->ReplicatedWrite or messages
+    // You need to have stored the original ReplicatedWrite per writeID; if not, reconstruct minimal ReplicatedWrite
+    s.mu.Lock()
+    // if you have s.storedWrites map[uint64]*pb.ReplicatedWrite use that
+    // fallback: reconstruct from m.writes or msgWrite. For simplicity, iterate over available writeIDs
+    var max uint64
+    for w := range s.storedWrites { if w > max { max = w } }
+    s.mu.Unlock()
+
+    if to == 0 || to > max+1 {
+        to = max + 1
+    }
+    if from >= to {
+        return nil
+    }
+    for wid := from; wid < to; wid++ {
+        s.mu.Lock()
+        rw, ok := s.storedWrites[wid]
+        s.mu.Unlock()
+        if !ok {
+            continue
+        }
+        if err := stream.Send(rw); err != nil {
+            return err
+        }
+    }
+    return nil
 }
 
