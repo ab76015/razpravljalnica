@@ -1,37 +1,17 @@
 package main
 
 import (
-    "log"
-    "net"
+	"flag"
+	"log"
 
-    "google.golang.org/grpc"
-
-    pb "github.com/ab76015/razpravljalnica/api/pb"
-    control "github.com/ab76015/razpravljalnica/internal/control"
+	control "github.com/ab76015/razpravljalnica/pkg/control"
 )
 
 func main() {
-    // inicializacija stanja
-    controlState := control.NewChainState()
+	addr := flag.String("addr", ":60051", "Control plane listen address")
+	flag.Parse()
 
-    // kontrolni strežnik
-    srv := control.NewControlServer(controlState)
-
-    // START monitor (heartbeats)
-    srv.StartMonitor()
-
-    lis, err := net.Listen("tcp", ":60051")
-    if err != nil {
-        log.Fatalf("Control server failed to listen: %v", err)
-    }
-
-    grpcServer := grpc.NewServer()
-    pb.RegisterControlPlaneServer(grpcServer, srv)
-
-    log.Printf("Control server listening on :60051")
-
-    if err := grpcServer.Serve(lis); err != nil {
-        log.Fatalf("Control server failed to serve: %v", err)
-    }
+	if err := control.StartControl(*addr); err != nil {
+		log.Fatal(err)
+	}
 }
-
