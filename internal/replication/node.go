@@ -21,7 +21,7 @@ type NodeState struct {
 	self        *pb.NodeInfo
 	head        *pb.NodeInfo
 	tail        *pb.NodeInfo
-	nodes[]     *pb.NodeInfo
+	nodes       []*pb.NodeInfo
     chainVersion     uint64
     nextWriteID   uint64
 }
@@ -31,19 +31,93 @@ func NewNodeState(self *pb.NodeInfo) *NodeState {
 	return &NodeState{self: self}
 }
 
-// UpdateConfig posodobi lokalno stanje verige za vozlisce
+// UpdateConfig posodobi lokalno stanje verige za vozlisce in izpise razliko
 func (ns *NodeState) UpdateConfig(cfg *pb.ChainConfig) {
 	ns.mu.Lock()
 	defer ns.mu.Unlock()
+
+	// snapshot previous
+	var prevHeadId, prevTailId, prevPredId, prevSuccId string
+	prevVersion := ns.chainVersion
+	if ns.head != nil {
+		prevHeadId = ns.head.NodeId
+	}
+	if ns.tail != nil {
+		prevTailId = ns.tail.NodeId
+	}
+	if ns.predecessor != nil {
+		prevPredId = ns.predecessor.NodeId
+	}
+	if ns.successor != nil {
+		prevSuccId = ns.successor.NodeId
+	}
+
+	// apply new config
 	ns.predecessor = cfg.Predecessor
 	ns.successor = cfg.Successor
 	ns.head = cfg.Head
 	ns.tail = cfg.Tail
 	ns.chainVersion = cfg.ChainVersion
 
-    if len(cfg.Nodes) > 0 {
+	if len(cfg.Nodes) > 0 {
 		ns.nodes = make([]*pb.NodeInfo, len(cfg.Nodes))
 		copy(ns.nodes, cfg.Nodes)
+	} else {
+		ns.nodes = nil
+	}
+
+	// new ids
+	var newHeadId, newTailId, newPredId, newSuccId string
+	if ns.head != nil {
+		newHeadId = ns.head.NodeId
+	}
+	if ns.tail != nil {
+		newTailId = ns.tail.NodeId
+	}
+	if ns.predecessor != nil {
+		newPredId = ns.predecessor.NodeId
+	}
+	if ns.successor != nil {
+		newSuccId = ns.successor.NodeId
+	}
+
+	// log summary of changes
+	log.Printf("[CHAIN-UPDATE] ChainVersion: %d -> %d | head: %s -> %s | tail: %s -> %s | pred: %s -> %s | succ: %s -> %s",
+		prevVersion, ns.chainVersion,
+		prevHeadId, newHeadId,
+		prevTailId, newTailId,
+		prevPredId, newPredId,
+		prevSuccId, newSuccId,
+	)
+
+	// role transitions for this node
+	selfId := ""
+	if ns.self != nil {
+		selfId = ns.self.NodeId
+	}
+
+	wasHead := prevHeadId != "" && selfId == prevHeadId
+	isHead := newHeadId != "" && selfId == newHeadId
+	if !wasHead && isHead {
+		log.Printf("[ROLE] node=%s BECAME HEAD (chainver=%d)", selfId, ns.chainVersion)
+	} else if wasHead && !isHead {
+		log.Printf("[ROLE] node=%s LOST HEAD (chainver=%d)", selfId, ns.chainVersion)
+	}
+
+	wasTail := prevTailId != "" && selfId == prevTailId
+	isTail := newTailId != "" && selfId == newTailId
+	if !wasTail && isTail {
+		log.Printf("[ROLE] node=%s BECAME TAIL (chainver=%d)", selfId, ns.chainVersion)
+	} else if wasTail && !isTail {
+		log.Printf("[ROLE] node=%s LOST TAIL (chainver=%d)", selfId, ns.chainVersion)
+	}
+
+	// pred/succ specific messages
+	if prevPredId != newPredId {
+		log.Printf("[NEIGHBOR] node=%s predecessor changed: %s -> %s", selfId, prevPredId, newPredId)
+	}
+	if prevSuccId != newSuccId {
+		log.Printf("[NEIGHBOR] node=%s successor changed: %s -> %s", selfId, prevSuccId, newSuccId)
 	}
 }
 
@@ -158,18 +232,20 @@ func (s *DataNodeServer) State() *NodeState {
 
 // UpdateChainConfig RPC ki ga klice kontrolna ravnina ko zeli posodobiti stanje streznika na podatkovni ravnini
 func (s *DataNodeServer) UpdateChainConfig(ctx context.Context, cfg *pb.ChainConfig) (*emptypb.Empty, error) {
+	// delegate to NodeState, which now logs details and role transitions
 	s.state.UpdateConfig(cfg)
-	log.Printf(
-		"[CHAIN-UPDATE] ChainVersion=%d pred=(%v) succ=(%v)\n head=(%v) tail=(%v)\n",
-		cfg.ChainVersion,
-		cfg.Predecessor,
-		cfg.Successor,
+
+	// also log a compact view including addresses (helpful in multi-node tests)
+	log.Printf("[CHAIN-UPDATE] Node self=%v | Head=%v Tail=%v | Version=%d",
+		s.state.Self(),
 		cfg.Head,
 		cfg.Tail,
+		cfg.ChainVersion,
 	)
+
 	return &emptypb.Empty{}, nil
 }
-
+	
 
 func (s *DataNodeServer) ApplyWrite(rw *pb.ReplicatedWrite) error {
 	return s.applyWrite(rw)

@@ -21,6 +21,10 @@ type ControlServer struct {
     // resync
     statusMu sync.Mutex
     status   map[string]*nodeStatus
+    // failure detection
+    missMu       sync.Mutex
+    missCount    map[string]int
+    missThreshold int
 }
 
 // za resync
@@ -29,9 +33,16 @@ type nodeStatus struct {
     lastSeen      time.Time
 }
 
-
 func NewControlServer(state *ChainState) *ControlServer {
-    return &ControlServer{state: state, hbInterval: 3 * time.Second, hbTimeout:  2 * time.Second, stopCh: make(chan struct{}),}
+    return &ControlServer{
+        state: state,
+        hbInterval: 3 * time.Second,
+        hbTimeout:  2 * time.Second,
+        stopCh: make(chan struct{}),
+        status: make(map[string]*nodeStatus),
+        missCount: make(map[string]int),
+        missThreshold: 3, // require 3 misses before declaring failure
+    }
 }
 
 // StartMonitor se klice iz cmd main.go 
@@ -68,7 +79,19 @@ func (s *ControlServer) checkAllNodes() {
             conn, err := grpc.DialContext(ctx, node.Address, grpc.WithInsecure(), grpc.WithBlock())
             if err != nil {
                 log.Printf("[HB] node %s unreachable: %v", node.NodeId, err)
-                s.handleNodeFailure(node, "unreachable")
+
+                // increment miss counter
+                s.missMu.Lock()
+                s.missCount[node.NodeId]++
+                misses := s.missCount[node.NodeId]
+                s.missMu.Unlock()
+
+                if misses >= s.missThreshold {
+                    log.Printf("[HB] node %s missed %d heartbeats -> declaring failed", node.NodeId, misses)
+                    s.handleNodeFailure(node, "unreachable")
+                } else {
+                    log.Printf("[HB] node %s missed %d/%d heartbeats; will wait", node.NodeId, misses, s.missThreshold)
+                }
                 return
             }
             defer conn.Close()
@@ -77,16 +100,33 @@ func (s *ControlServer) checkAllNodes() {
             resp, err := client.Heartbeat(ctx, &pb.HeartbeatReq{})
             if err != nil {
                 log.Printf("[HB] heartbeat failed for %s: %v", node.NodeId, err)
-                s.handleNodeFailure(node, "hb-fail")
+                // increment miss counter on heartbeat failure too
+                s.missMu.Lock()
+                s.missCount[node.NodeId]++
+                misses := s.missCount[node.NodeId]
+                s.missMu.Unlock()
+
+                if misses >= s.missThreshold {
+                    log.Printf("[HB] node %s missed %d heartbeats -> declaring failed", node.NodeId, misses)
+                    s.handleNodeFailure(node, "hb-fail")
+                } else {
+                    log.Printf("[HB] node %s missed %d/%d heartbeats; will wait", node.NodeId, misses, s.missThreshold)
+                }
                 return
             }
-            // posodobi nodeStatus (resync) glede na prejet odgovor heartbeat
+
+            // successful heartbeat -> reset miss counter and update status
+            s.missMu.Lock()
+            s.missCount[node.NodeId] = 0
+            s.missMu.Unlock()
+
             s.statusMu.Lock()
-            if s.status == nil { s.status = map[string]*nodeStatus{} }
+            if s.status == nil {
+                s.status = map[string]*nodeStatus{}
+            }
             s.status[node.NodeId] = &nodeStatus{lastCommitted: resp.LastCommittedWrite, lastSeen: time.Now()}
             s.statusMu.Unlock()
 
-            // zadnji commitan write na vozliscu izpis
             log.Printf("[HB] node %s alive last_committed=%d chainver=%d", resp.NodeId, resp.LastCommittedWrite, resp.ChainVersion)
         }(n)
     }
@@ -226,31 +266,42 @@ func buildConfigForIndex(idx int, state *ChainState) *pb.ChainConfig {
 func (s *ControlServer) notifyAllNodes() {
     nodes, _ := s.state.NodesSnapshot()
 
-
     for idx, node := range nodes {
         go func(i int, n *pb.NodeInfo) {
-            conn, err := grpc.Dial(n.Address,grpc.WithInsecure(),)
+            // dial with timeout and WithBlock, retry once
+            ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+            defer cancel()
+
+            conn, err := grpc.DialContext(ctx, n.Address, grpc.WithInsecure(), grpc.WithBlock())
             if err != nil {
-                log.Printf("Failed to dial node %s at %s: %v\n", n.NodeId, n.Address, err)
-                return
+                log.Printf("[NOTIFY] dial failed %s (%s): %v", n.NodeId, n.Address, err)
+
+                // one quick retry
+                time.Sleep(200 * time.Millisecond)
+                ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
+                defer cancel2()
+                conn, err = grpc.DialContext(ctx2, n.Address, grpc.WithInsecure(), grpc.WithBlock())
+                if err != nil {
+                    log.Printf("[NOTIFY] retry failed %s (%s): %v", n.NodeId, n.Address, err)
+                    return
+                }
             }
             defer conn.Close()
 
             client := pb.NewDataNodeClient(conn)
 
-            ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-            defer cancel()
-
-            // Build config for THIS node's index
+            // Build config specific for this node index
             cfg := buildConfigForIndex(i, s.state)
 
-            _, err = client.UpdateChainConfig(ctx, cfg)
-            if err != nil {
-                log.Printf("Failed to update config for node %s: %v\n", n.NodeId, err)
-            } else {
-                log.Printf("Updated config sent to node %s with addr %s\n", n.NodeId, n.Address)
+            // send UpdateChainConfig
+            ctxRPC, cancelRPC := context.WithTimeout(context.Background(), 5*time.Second)
+            defer cancelRPC()
+            if _, err := client.UpdateChainConfig(ctxRPC, cfg); err != nil {
+                log.Printf("[NOTIFY] UpdateChainConfig failed for %s: %v", n.NodeId, err)
+                return
             }
 
+            log.Printf("[NOTIFY] UpdateChainConfig sent to node=%s addr=%s chainver=%d", n.NodeId, n.Address, cfg.ChainVersion)
         }(idx, node)
     }
 }
