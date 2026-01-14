@@ -36,12 +36,12 @@ type nodeStatus struct {
 func NewControlServer(state *ChainState) *ControlServer {
     return &ControlServer{
         state: state,
-        hbInterval: 3 * time.Second,
-        hbTimeout:  2 * time.Second,
+        hbInterval: 1 * time.Second,
+        hbTimeout:  1 * time.Second,
         stopCh: make(chan struct{}),
         status: make(map[string]*nodeStatus),
         missCount: make(map[string]int),
-        missThreshold: 3, // require 3 misses before declaring failure
+        missThreshold: 2, // require 2 misses before declaring failure
     }
 }
 

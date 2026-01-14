@@ -117,7 +117,7 @@ func (ns *NodeState) UpdateConfig(cfg *pb.ChainConfig) {
 		log.Printf("[NEIGHBOR] node=%s predecessor changed: %s -> %s", selfId, prevPredId, newPredId)
 	}
 	if prevSuccId != newSuccId {
-		log.Printf("[NEIGHBOR] node=%s successor changed: %s -> %s", selfId, prevSuccId, newSuccId)
+    	log.Printf("[NEIGHBOR] node=%s successor changed: %s -> %s", selfId, prevSuccId, newSuccId)
 	}
 }
 
@@ -278,13 +278,14 @@ func (s *DataNodeServer) applyWrite(rw *pb.ReplicatedWrite) error {
             if err := proto.Unmarshal(rw.Payload, &req); err != nil {
                 return err
             }
-            // CRAQ verzija PostMessage; sprva dirty writeID
+
             _, err := s.storage.PostMessageWithWriteID(
-                req.TopicId,
-                req.UserId,
-                req.Text,
-                rw.WriteId,
+                    req.TopicId, 
+                    req.UserId, 
+                    req.Text, 
+                    rw.WriteId, 
             )
+
             return err
 
         case "UpdateMessage":
@@ -314,6 +315,7 @@ func (s *DataNodeServer) applyWrite(rw *pb.ReplicatedWrite) error {
                 req.UserId,
                 rw.WriteId,
             )
+            
             return err
 
         case "LikeMessage":
@@ -358,12 +360,14 @@ func (s *DataNodeServer) ReplicateFromHead(rw *pb.ReplicatedWrite) error {
         log.Printf("ReplicateFromHead: applyWrite failed: op=%s writeID=%d err=%v", rw.Op, rw.WriteId, err)
         return fmt.Errorf("applyWrite op=%s writeID=%d: %w", rw.Op, rw.WriteId, err)
     }
+    
     s.mu.Lock()
     s.storedWrites[rw.WriteId] = rw
+    storedCount := len(s.storedWrites)
     s.mu.Unlock()
 
-    log.Printf("Kot glava ustvaril zapis.\n")
-
+    //log.Printf("Kot glava ustvaril zapis.\n")
+    log.Printf("[DNODE] stored write=%d op=%s storedCount=%d", rw.WriteId, rw.Op, storedCount)
     // ce ni naslednikov -> ta node je rep (en node v verigi). Oznaci commited in obvesti.
     if s.state.Successor() == nil {
         // ce je pisalna operacija znotraj topic -> poslji narocnikom
@@ -407,9 +411,13 @@ func (s *DataNodeServer) ReplicateFromHead(rw *pb.ReplicatedWrite) error {
         }
         return nil
     }
-
-    // sicer poslji naslednjiku
-    return s.ForwardWrite(rw)
+    // sicer pošlji naslednjiku
+    log.Printf("[DNODE] forwarding write=%d op=%s to succ=%v", rw.WriteId, rw.Op, s.state.Successor())
+    if err := s.ForwardWrite(rw); err != nil {
+        log.Printf("[DNODE] forward failed write=%d err=%v", rw.WriteId, err)
+        return err
+    }
+    return nil
 }
 
 // ForwardWrite vzpostavi povezavo z succ in mu pošlje rw

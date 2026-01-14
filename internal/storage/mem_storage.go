@@ -4,6 +4,7 @@ import (
     "errors"
     "sync"
     "time"  
+    "fmt"
 //    "log"
 )
 
@@ -69,6 +70,28 @@ func (m *MemStorage) CreateTopic(name string) (*Topic, error) {
     return t, nil
 }
 
+func (m *MemStorage) debugDumpLocked() string {
+    var max uint64
+    committedCount := 0
+    for w := range m.writes {
+        if w > max {
+            max = w
+        }
+        if c, ok := m.committed[w]; ok && c {
+            committedCount++
+        }
+    }
+    return fmt.Sprintf("writes=%d msgWrites=%d messages=%d committed=%d maxWrite=%d",
+        len(m.writes), len(m.msgWrite), len(m.messages), committedCount, max)
+}
+
+// DebugDump is a thread-safe wrapper if you want to log outside the lock.
+func (m *MemStorage) DebugDump() string {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+    return m.debugDumpLocked()
+}
+
 // CRAQ, nastavi msg kot 'dirty' sprva
 func (m *MemStorage) PostMessageWithWriteID(topicID, userID int64, text string, writeID uint64) (*Message, error) {
     m.mu.Lock()
@@ -97,24 +120,35 @@ func (m *MemStorage) PostMessageWithWriteID(topicID, userID int64, text string, 
     if _, ok := m.users[userID]; !ok {
         return nil, errors.New("user not found")
     }
-    // ze bil apliciran, idempotenca
-    if _, exists := m.writes[writeID]; exists {
-        return m.writes[writeID], nil
+    // idempotence: if this write already applied, return recorded message (may be nil for deletes)
+    if existing, exists := m.writes[writeID]; exists {
+        return existing, nil
     }
 
+    // Make Message.ID deterministic and global: derive it from writeID.
+    // This ensures every replica assigns the same message id for the POST.
+    msgID := int64(writeID)
     msg := &Message{
-        ID:        m.nextMsgID,
+        ID:        msgID,
         TopicID:   topicID,
         UserID:    userID,
         Text:      text,
         CreatedAt: time.Now(),
         Likes:     0,
     }
-    m.messages[m.nextMsgID] = msg
-    m.msgWrite[m.nextMsgID] = writeID
+    // store by the globally-determined id
+    m.messages[msgID] = msg
+    m.msgWrite[msgID] = writeID
     m.writes[writeID] = msg
     m.committed[writeID] = false
-    m.nextMsgID++
+    // ensure nextMsgID remains >= max(message ids seen)+1 to keep GetMessages loop safe
+    if msgID >= m.nextMsgID {
+        m.nextMsgID = msgID + 1
+    }
+    // compact debug dump while still holding lock
+    dump := m.debugDumpLocked()
+    fmt.Printf("[STORAGE][POST] write=%d msg=%d topic=%d user=%d dump=%s\n", writeID, msg.ID, topicID, userID, dump)
+
     return msg, nil
 }
 
@@ -193,42 +227,67 @@ func (m *MemStorage) UpdateMessage(topicID, userID, msgID int64, text string) (*
 }
 
 // CRAQ
-func (m *MemStorage) DeleteMessageWithWriteID(topicID, userID, msgID int64, writeID uint64) (*Message, error) {
+// CRAQ
+// canonical signature: topicID, msgID, userID, writeID
+func (m *MemStorage) DeleteMessageWithWriteID(topicID, msgID, userID int64, writeID uint64) (*Message, error) {
     m.mu.Lock()
     defer m.mu.Unlock()
 
-    msg, ok := m.messages[msgID];
+    // If message already removed but tombstoned -> idempotent success
+    if delW, wasDeleted := m.deleted[msgID]; wasDeleted {
+        // record this write mapping for bookkeeping (idempotence)
+        m.msgWrite[msgID] = writeID
+        // keep a nil placeholder to indicate this write exists but payload not present
+        m.writes[writeID] = nil
+        m.committed[writeID] = false
+        fmt.Printf("[STORAGE][DELETE] idempotent delete msg=%d topic=%d user=%d already tombstoned at write=%d; newWrite=%d\n",
+            msgID, topicID, userID, delW, writeID)
+        return nil, nil
+    }
+
+    msg, ok := m.messages[msgID]
     if !ok {
-        return msg, errors.New("message not found")
+        // not found and not tombstoned -> helpful diagnostic
+        fmt.Printf("[STORAGE][DELETE] message not found msg=%d reqTopic=%d reqUser=%d\n", msgID, topicID, userID)
+        return nil, errors.New("message not found")
     }
+
     if msg.TopicID != topicID {
-        return msg, errors.New("message not in topic")
+        // log full diagnostic so we can see which IDs got swapped
+        fmt.Printf("[STORAGE][DELETE] topic mismatch: reqTopic=%d msg.Topic=%d msgID=%d reqUser=%d msgUser=%d\n",
+            topicID, msg.TopicID, msgID, userID, msg.UserID)
+        return nil, errors.New("message not in topic")
     }
+
     if msg.UserID != userID {
-        return msg, errors.New("incorrect user id")
+        return nil, errors.New("incorrect user id")
     }
-    
-    // ze bil apliciran (idempotenca)
+
+    // idempotence: if this exact write was already applied, return current state
     if _, exists := m.writes[writeID]; exists {
         return msg, nil
     }
-    
-    /*zbrisemo se vse like s tem msgID
+
+    // perform delete: remove likes, mark tombstone, keep bookkeeping for CRAQ
     for like := range m.likes {
         if like.MessageID == msgID {
             delete(m.likes, like)
         }
-    }*/
+    }
 
+    // remove from messages map (logical delete on apply)
     delete(m.messages, msgID)
-    // craq
+
     m.msgWrite[msgID] = writeID
-    m.writes[writeID] = msg 
+    // store the message object in writes so MarkCommitted can still return it for event emission
+    m.writes[writeID] = msg
     m.committed[writeID] = false
-    //tombstone map, da lazje prepoznamo delete ob commit casu
     m.deleted[msgID] = writeID
+
+    fmt.Printf("[STORAGE][DELETE] applied delete msg=%d topic=%d by user=%d write=%d\n", msgID, topicID, userID, writeID)
     return msg, nil
 }
+
 // deprecated
 func (m *MemStorage) DeleteMessage(topicID, userID, msgID int64) error {
     m.mu.Lock()
@@ -332,6 +391,17 @@ func (m* MemStorage) LikeMessage(topicID, msgID, userID int64) (*Message, error)
     return msg, nil
 }
 
+func (m *MemStorage) ListUsers() ([]*User, error) {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+    out := make([]*User, 0, len(m.users))
+    for _, u := range m.users {
+        out = append(out, u)
+    }
+    return out, nil
+}
+
+
 func (m* MemStorage) ListTopics() ([]*Topic, error) {
     m.mu.Lock()
     defer m.mu.Unlock()
@@ -371,6 +441,7 @@ func (m *MemStorage) GetMessages(topicID, fromMsgID int64, limit int32) ([]*Mess
 
 
 // MarkCommitted nastavi writeID kot commited in vrne message.
+// MarkCommitted nastavi writeID kot commited in vrne message.
 func (m *MemStorage) MarkCommitted(writeID uint64) (*Message, error) {
     m.mu.Lock()
     defer m.mu.Unlock()
@@ -380,21 +451,55 @@ func (m *MemStorage) MarkCommitted(writeID uint64) (*Message, error) {
         return nil, errors.New("write id not found")
     }
 
+    // handle the case where the write has a nil payload (idempotent delete placeholder)
+    if msg == nil {
+        // find message id from deleted mapping (the tombstone maps msgID -> writeID)
+        var foundMsgID int64 = -1
+        for mid, dw := range m.deleted {
+            if dw == writeID {
+                foundMsgID = mid
+                break
+            }
+        }
+        if foundMsgID == -1 {
+            // cannot determine msgID; return error (shouldn't happen)
+            return nil, errors.New("write id has nil payload and no deleted mapping")
+        }
+
+        // finalise delete: likes already removed at apply; clean up tombstone bookkeeping
+        for like := range m.likes {
+            if like.MessageID == foundMsgID {
+                delete(m.likes, like)
+            }
+        }
+        // message was already removed from m.messages at apply time
+        delete(m.deleted, foundMsgID)
+        delete(m.msgWrite, foundMsgID)
+
+        m.committed[writeID] = true
+        fmt.Printf("[STORAGE][COMMIT] write=%d msg=%d committed=true (nil-payload delete finish)\n", writeID, foundMsgID)
+        return nil, nil
+    }
+
+    // normal (non-nil) payload path
     msgID := msg.ID
-    // Ce je ta write v oznacen kot tombstone v deleted, ga dokoncno odstrani
+    // If this write is the tombstone for a previously deleted message, complete final removal
     if delW, isDel := m.deleted[msgID]; isDel && delW == writeID {
-        // izbrisi tudi vse njegove like
+        // delete likes (defensive)
         for like := range m.likes {
             if like.MessageID == msgID {
                 delete(m.likes, like)
             }
         }
-        // dokoncno izbrisi
+        // physically remove (if present) and clean bookkeeping
         delete(m.messages, msgID)
         delete(m.deleted, msgID)
         delete(m.msgWrite, msgID)
     }
 
+    // snapshot for logging
+    dump := m.debugDumpLocked()
+    fmt.Printf("[STORAGE][COMMIT] write=%d msg=%d committed=true dump=%s\n", writeID, msgID, dump)
     m.committed[writeID] = true
     return msg, nil
 }

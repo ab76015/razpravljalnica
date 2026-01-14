@@ -72,15 +72,29 @@ func (s *Server) CreateUser(ctx context.Context, in *pb.CreateUserRequest) (*pb.
         s.replication.CancelPendingACK(writeID)
         return nil, err
     }
-	
     select {
         case <-chanACK:
-            // ACK prejet
+            // ACK received — read the last user from storage and return it
+            if ms, ok := s.storage.(*storage.MemStorage); ok {
+                users, _ := ms.ListUsers()
+                var maxID int64 = -1
+                var last *storage.User
+                for _, u := range users {
+                    if u.ID > maxID {
+                        maxID = u.ID
+                        last = u
+                    }
+                }
+                if last != nil {
+                    return &pb.User{Id: last.ID, Name: last.Name}, nil
+                }
+            }
+            // fallback: return empty but acked
             return &pb.User{}, nil
         case <-ctx.Done():
             s.replication.CancelPendingACK(writeID)
-            return nil, status.Errorf(codes.DeadlineExceeded, "PostMessage not acknowledged in time")
-	}
+            return nil, status.Errorf(codes.DeadlineExceeded, "CreateUser not acknowledged in time")
+    }	
 }
 
 // CreateTopic je pisalna metoda, ki ustvari novo temo
@@ -113,14 +127,27 @@ func (s *Server) CreateTopic(ctx context.Context, in *pb.CreateTopicRequest) (*p
         return nil, err
     }
 
-	select {
+    select {
         case <-chanACK:
-            // ACK prejet
+            // ACK received — read last topic from storage and return it
+            topics, err := s.storage.ListTopics()
+            if err == nil && len(topics) > 0 {
+                // choose topic with max ID
+                var maxIdx int = 0
+                for i, t := range topics {
+                    if t.ID > topics[maxIdx].ID {
+                        maxIdx = i
+                    }
+                }
+                t := topics[maxIdx]
+                return &pb.Topic{Id: t.ID, Name: t.Name}, nil
+            }
+            // fallback
             return &pb.Topic{}, nil
         case <-ctx.Done():
             s.replication.CancelPendingACK(writeID)
-            return nil, status.Errorf(codes.DeadlineExceeded, "PostMessage not acknowledged in time")
-	}
+            return nil, status.Errorf(codes.DeadlineExceeded, "CreateTopic not acknowledged in time")
+    }
 }
 
 // PostMessage je pisalna metoda, ki ustvari novo sporočilo
