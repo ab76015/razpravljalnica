@@ -5,7 +5,7 @@ import (
     "sync"
     "time"  
     "fmt"
-//    "log"
+    "log"
 )
 
 type MemStorage struct {
@@ -147,7 +147,7 @@ func (m *MemStorage) PostMessageWithWriteID(topicID, userID int64, text string, 
     }
     // compact debug dump while still holding lock
     dump := m.debugDumpLocked()
-    fmt.Printf("[STORAGE][POST] write=%d msg=%d topic=%d user=%d dump=%s\n", writeID, msg.ID, topicID, userID, dump)
+    log.Printf("[STORAGE][POST] write=%d msg=%d topic=%d user=%d dump=%s\n", writeID, msg.ID, topicID, userID, dump)
 
     return msg, nil
 }
@@ -240,7 +240,7 @@ func (m *MemStorage) DeleteMessageWithWriteID(topicID, msgID, userID int64, writ
         // keep a nil placeholder to indicate this write exists but payload not present
         m.writes[writeID] = nil
         m.committed[writeID] = false
-        fmt.Printf("[STORAGE][DELETE] idempotent delete msg=%d topic=%d user=%d already tombstoned at write=%d; newWrite=%d\n",
+        log.Printf("[STORAGE][DELETE] idempotent delete msg=%d topic=%d user=%d already tombstoned at write=%d; newWrite=%d\n",
             msgID, topicID, userID, delW, writeID)
         return nil, nil
     }
@@ -248,13 +248,13 @@ func (m *MemStorage) DeleteMessageWithWriteID(topicID, msgID, userID int64, writ
     msg, ok := m.messages[msgID]
     if !ok {
         // not found and not tombstoned -> helpful diagnostic
-        fmt.Printf("[STORAGE][DELETE] message not found msg=%d reqTopic=%d reqUser=%d\n", msgID, topicID, userID)
+        log.Printf("[STORAGE][DELETE] message not found msg=%d reqTopic=%d reqUser=%d\n", msgID, topicID, userID)
         return nil, errors.New("message not found")
     }
 
     if msg.TopicID != topicID {
         // log full diagnostic so we can see which IDs got swapped
-        fmt.Printf("[STORAGE][DELETE] topic mismatch: reqTopic=%d msg.Topic=%d msgID=%d reqUser=%d msgUser=%d\n",
+        log.Printf("[STORAGE][DELETE] topic mismatch: reqTopic=%d msg.Topic=%d msgID=%d reqUser=%d msgUser=%d\n",
             topicID, msg.TopicID, msgID, userID, msg.UserID)
         return nil, errors.New("message not in topic")
     }
@@ -284,7 +284,7 @@ func (m *MemStorage) DeleteMessageWithWriteID(topicID, msgID, userID int64, writ
     m.committed[writeID] = false
     m.deleted[msgID] = writeID
 
-    fmt.Printf("[STORAGE][DELETE] applied delete msg=%d topic=%d by user=%d write=%d\n", msgID, topicID, userID, writeID)
+    log.Printf("[STORAGE][DELETE] applied delete msg=%d topic=%d by user=%d write=%d\n", msgID, topicID, userID, writeID)
     return msg, nil
 }
 
@@ -477,7 +477,7 @@ func (m *MemStorage) MarkCommitted(writeID uint64) (*Message, error) {
         delete(m.msgWrite, foundMsgID)
 
         m.committed[writeID] = true
-        fmt.Printf("[STORAGE][COMMIT] write=%d msg=%d committed=true (nil-payload delete finish)\n", writeID, foundMsgID)
+        log.Printf("[STORAGE][COMMIT] write=%d msg=%d committed=true (nil-payload delete finish)\n", writeID, foundMsgID)
         return nil, nil
     }
 
@@ -499,7 +499,7 @@ func (m *MemStorage) MarkCommitted(writeID uint64) (*Message, error) {
 
     // snapshot for logging
     dump := m.debugDumpLocked()
-    fmt.Printf("[STORAGE][COMMIT] write=%d msg=%d committed=true dump=%s\n", writeID, msgID, dump)
+    log.Printf("[STORAGE][COMMIT] write=%d msg=%d committed=true dump=%s\n", writeID, msgID, dump)
     m.committed[writeID] = true
     return msg, nil
 }

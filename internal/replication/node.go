@@ -38,7 +38,7 @@ func (ns *NodeState) UpdateConfig(cfg *pb.ChainConfig) {
 
 	// snapshot previous
 	var prevHeadId, prevTailId, prevPredId, prevSuccId string
-	prevVersion := ns.chainVersion
+	//prevVersion := ns.chainVersion
 	if ns.head != nil {
 		prevHeadId = ns.head.NodeId
 	}
@@ -82,13 +82,7 @@ func (ns *NodeState) UpdateConfig(cfg *pb.ChainConfig) {
 	}
 
 	// log summary of changes
-	log.Printf("[CHAIN-UPDATE] ChainVersion: %d -> %d | head: %s -> %s | tail: %s -> %s | pred: %s -> %s | succ: %s -> %s",
-		prevVersion, ns.chainVersion,
-		prevHeadId, newHeadId,
-		prevTailId, newTailId,
-		prevPredId, newPredId,
-		prevSuccId, newSuccId,
-	)
+	
 
 	// role transitions for this node
 	selfId := ""
